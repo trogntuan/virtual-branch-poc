@@ -8,7 +8,14 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const DRAG_THRESHOLD = 0.012;
-const PDF_RENDER_SCALE = 1.5;
+const PDF_RENDER_SCALE = 1.1;
+
+function isRenderCancelled(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object') return false;
+  const name = 'name' in cause ? String(cause.name) : '';
+  const message = 'message' in cause ? String(cause.message) : '';
+  return name === 'RenderingCancelledException' || message.includes('Rendering cancelled');
+}
 
 interface DocCollabViewerProps {
   url: string;
@@ -38,6 +45,7 @@ export function DocCollabViewer({
   onHighlightSelect,
 }: DocCollabViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -88,27 +96,46 @@ export function DocCollabViewer({
 
     void (async () => {
       try {
+        const previous = renderTaskRef.current;
+        if (previous) {
+          previous.cancel();
+          try {
+            await previous.promise;
+          } catch {
+            // RenderingCancelledException expected
+          }
+          if (renderTaskRef.current === previous) {
+            renderTaskRef.current = null;
+          }
+        }
+        if (cancelled || !canvasRef.current) return;
+
         const page = await pdfDoc.getPage(pageNumber);
-        if (cancelled) return;
+        if (cancelled || !canvasRef.current) return;
 
         const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
-        const canvas = canvasRef.current!;
+        const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
         if (!context) return;
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;
 
-        await page.render({ canvasContext: context, viewport }).promise;
-      } catch (cause: unknown) {
-        if (!cancelled) {
-          setLoadError(cause instanceof Error ? cause.message : 'Không hiển thị được trang PDF.');
+        const task = page.render({ canvasContext: context, viewport });
+        renderTaskRef.current = task;
+        await task.promise;
+        if (renderTaskRef.current === task) {
+          renderTaskRef.current = null;
         }
+      } catch (cause: unknown) {
+        if (cancelled || isRenderCancelled(cause)) return;
+        setLoadError(cause instanceof Error ? cause.message : 'Không hiển thị được trang PDF.');
       }
     })();
 
     return () => {
       cancelled = true;
+      renderTaskRef.current?.cancel();
     };
   }, [pdfDoc, viewState.page]);
 
@@ -217,20 +244,26 @@ export function DocCollabViewer({
         <div className="pdf-viewer-toolbar">
           <button
             type="button"
+            className="pdf-nav-btn"
             onClick={() => onPageChange?.(Math.max(1, viewState.page - 1))}
             disabled={viewState.page <= 1}
+            title="Trang trước"
+            aria-label="Trang trước"
           >
-            Trước
+            ‹
           </button>
           <span className="pdf-viewer-page-info">
             Trang {viewState.page} / {pageCount}
           </span>
           <button
             type="button"
+            className="pdf-nav-btn"
             onClick={() => onPageChange?.(Math.min(pageCount, viewState.page + 1))}
             disabled={viewState.page >= pageCount}
+            title="Trang sau"
+            aria-label="Trang sau"
           >
-            Sau
+            ›
           </button>
           <span className="pdf-viewer-hint muted">Giữ chuột và kéo để tô vùng</span>
         </div>

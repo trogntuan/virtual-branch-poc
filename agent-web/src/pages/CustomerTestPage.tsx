@@ -41,13 +41,13 @@ export function CustomerTestPage() {
     disconnect,
     toggleMic,
     toggleCamera,
+    room,
     connectionState,
     micEnabled,
     cameraEnabled,
     error: liveKitError,
     localVideoRef,
     remoteVideoRef,
-    getRoom,
   } = useLiveKitRoom();
 
   const {
@@ -56,7 +56,7 @@ export function CustomerTestPage() {
     clearPendingRequest,
     collabEnded,
   } = useDocCollab({
-    room: getRoom(),
+    room,
     role: 'CUSTOMER',
     sessionId,
   });

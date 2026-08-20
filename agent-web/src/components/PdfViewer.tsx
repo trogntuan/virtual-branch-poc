@@ -6,12 +6,20 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
+function isRenderCancelled(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object') return false;
+  const name = 'name' in cause ? String(cause.name) : '';
+  const message = 'message' in cause ? String(cause.message) : '';
+  return name === 'RenderingCancelledException' || message.includes('Rendering cancelled');
+}
+
 interface PdfViewerProps {
   url: string;
 }
 
 export function PdfViewer({ url }: PdfViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState(0);
@@ -60,27 +68,46 @@ export function PdfViewer({ url }: PdfViewerProps) {
 
     void (async () => {
       try {
+        const previous = renderTaskRef.current;
+        if (previous) {
+          previous.cancel();
+          try {
+            await previous.promise;
+          } catch {
+            // RenderingCancelledException expected
+          }
+          if (renderTaskRef.current === previous) {
+            renderTaskRef.current = null;
+          }
+        }
+        if (cancelled || !canvasRef.current) return;
+
         const page = await pdfDoc.getPage(pageNumber);
-        if (cancelled) return;
+        if (cancelled || !canvasRef.current) return;
 
         const viewport = page.getViewport({ scale: 1.5 });
-        const canvas = canvasRef.current!;
+        const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
         if (!context) return;
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;
 
-        await page.render({ canvasContext: context, viewport }).promise;
-      } catch (cause: unknown) {
-        if (!cancelled) {
-          setLoadError(cause instanceof Error ? cause.message : 'Không hiển thị được trang PDF.');
+        const task = page.render({ canvasContext: context, viewport });
+        renderTaskRef.current = task;
+        await task.promise;
+        if (renderTaskRef.current === task) {
+          renderTaskRef.current = null;
         }
+      } catch (cause: unknown) {
+        if (cancelled || isRenderCancelled(cause)) return;
+        setLoadError(cause instanceof Error ? cause.message : 'Không hiển thị được trang PDF.');
       }
     })();
 
     return () => {
       cancelled = true;
+      renderTaskRef.current?.cancel();
     };
   }, [pdfDoc, pageNumber]);
 
@@ -103,14 +130,28 @@ export function PdfViewer({ url }: PdfViewerProps) {
   return (
     <div className="pdf-viewer">
       <div className="pdf-viewer-toolbar">
-        <button type="button" onClick={goPrev} disabled={pageNumber <= 1}>
-          Trước
+        <button
+          type="button"
+          className="pdf-nav-btn"
+          onClick={goPrev}
+          disabled={pageNumber <= 1}
+          title="Trang trước"
+          aria-label="Trang trước"
+        >
+          ‹
         </button>
         <span className="pdf-viewer-page-info">
           Trang {pageNumber} / {pageCount}
         </span>
-        <button type="button" onClick={goNext} disabled={pageNumber >= pageCount}>
-          Sau
+        <button
+          type="button"
+          className="pdf-nav-btn"
+          onClick={goNext}
+          disabled={pageNumber >= pageCount}
+          title="Trang sau"
+          aria-label="Trang sau"
+        >
+          ›
         </button>
       </div>
       <div className="pdf-viewer-canvas-wrap">

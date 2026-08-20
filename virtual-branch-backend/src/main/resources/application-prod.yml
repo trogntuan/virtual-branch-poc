@@ -6,7 +6,7 @@ spring:
 
 virtual-branch:
   cors:
-    allowed-origins: ${VB_CORS_ALLOWED_ORIGINS:http://localhost:5173,https://*.run.app}
+    allowed-origins: ${VB_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,https://*.run.app}
   livekit:
     api-url: ${VB_LIVEKIT_API_URL}
     ws-url: ${VB_LIVEKIT_WS_URL}

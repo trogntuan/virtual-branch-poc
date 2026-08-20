@@ -69,6 +69,7 @@ export function useLiveKitRoom() {
     }
   }, []);
 
+  const [room, setRoom] = useState<Room | null>(null);
   const [connectionState, setConnectionState] = useState<RoomConnectionState>('DISCONNECTED');
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
@@ -81,11 +82,12 @@ export function useLiveKitRoom() {
   }, []);
 
   const disconnect = useCallback(async () => {
-    const room = roomRef.current;
+    const current = roomRef.current;
     roomRef.current = null;
-    if (room) {
-      room.removeAllListeners();
-      await room.disconnect();
+    setRoom(null);
+    if (current) {
+      current.removeAllListeners();
+      await current.disconnect();
     }
     cleanupRemoteVideo();
     if (localVideoRef.current) {
@@ -106,54 +108,65 @@ export function useLiveKitRoom() {
       setConnectionState('CONNECTING');
       setError(null);
 
-      const room = new Room({
+      const nextRoom = new Room({
         adaptiveStream: true,
         dynacast: true,
       });
 
-      room.on(RoomEvent.ConnectionStateChanged, (state) => {
+      // Assign before connect so ConnectionStateChanged re-renders never see a null room.
+      roomRef.current = nextRoom;
+      setRoom(nextRoom);
+
+      nextRoom.on(RoomEvent.ConnectionStateChanged, (state) => {
+        if (roomRef.current !== nextRoom) return;
         setConnectionState(mapConnectionState(state));
       });
 
-      room.on(RoomEvent.TrackSubscribed, (track) => {
+      nextRoom.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind === Track.Kind.Video) {
           attachVideoTrack(track, remoteVideoRef.current);
         }
       });
 
-      room.on(RoomEvent.TrackUnsubscribed, (track) => {
+      nextRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
         track.detach();
         if (track.kind === Track.Kind.Video) {
           cleanupRemoteVideo();
         }
       });
 
-      room.on(RoomEvent.LocalTrackPublished, (publication) => {
+      nextRoom.on(RoomEvent.LocalTrackPublished, (publication) => {
         if (publication.source === Track.Source.Camera && publication.track) {
           attachVideoTrack(publication.track, localVideoRef.current);
         }
       });
 
-      room.on(RoomEvent.Disconnected, () => {
+      nextRoom.on(RoomEvent.Disconnected, () => {
+        if (roomRef.current !== nextRoom) return;
+        roomRef.current = null;
+        setRoom(null);
         setConnectionState('DISCONNECTED');
       });
 
       try {
-        await room.connect(serverUrl, token);
-        roomRef.current = room;
+        await nextRoom.connect(serverUrl, token);
 
-        await room.localParticipant.setMicrophoneEnabled(true);
-        await room.localParticipant.setCameraEnabled(true);
+        await nextRoom.localParticipant.setMicrophoneEnabled(true);
+        await nextRoom.localParticipant.setCameraEnabled(true);
         setMicEnabled(true);
         setCameraEnabled(true);
 
-        attachRoomVideos(room, localVideoRef.current, remoteVideoRef.current);
+        attachRoomVideos(nextRoom, localVideoRef.current, remoteVideoRef.current);
 
-        await room.startAudio();
+        await nextRoom.startAudio();
         setConnectionState('CONNECTED');
       } catch (cause) {
-        room.removeAllListeners();
-        await room.disconnect();
+        if (roomRef.current === nextRoom) {
+          roomRef.current = null;
+          setRoom(null);
+        }
+        nextRoom.removeAllListeners();
+        await nextRoom.disconnect();
 
         if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
           setError('Chưa được cấp quyền camera hoặc micro.');
@@ -170,28 +183,28 @@ export function useLiveKitRoom() {
   );
 
   const toggleMic = useCallback(async () => {
-    const room = roomRef.current;
-    if (!room) {
+    const current = roomRef.current;
+    if (!current) {
       return;
     }
     const next = !micEnabled;
-    await room.localParticipant.setMicrophoneEnabled(next);
+    await current.localParticipant.setMicrophoneEnabled(next);
     setMicEnabled(next);
   }, [micEnabled]);
 
   const toggleCamera = useCallback(async () => {
-    const room = roomRef.current;
-    if (!room) {
+    const current = roomRef.current;
+    if (!current) {
       return;
     }
     const next = !cameraEnabled;
-    await room.localParticipant.setCameraEnabled(next);
+    await current.localParticipant.setCameraEnabled(next);
     setCameraEnabled(next);
 
     if (!next && localVideoRef.current) {
       localVideoRef.current.srcObject = null;
     } else {
-      const cameraPublication = room.localParticipant.getTrackPublication(Track.Source.Camera);
+      const cameraPublication = current.localParticipant.getTrackPublication(Track.Source.Camera);
       if (cameraPublication?.track) {
         attachVideoTrack(cameraPublication.track, localVideoRef.current);
       }
@@ -203,6 +216,7 @@ export function useLiveKitRoom() {
     disconnect,
     toggleMic,
     toggleCamera,
+    room,
     connectionState,
     micEnabled,
     cameraEnabled,
