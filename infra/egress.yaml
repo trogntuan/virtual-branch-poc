@@ -1,0 +1,21 @@
+api_key: devkey
+api_secret: virtual_branch_poc_dev_secret_2026
+
+# Use host LAN IP (same as livekit.yaml node_ip) — reachable from Docker egress Chrome.
+ws_url: ws://172.20.10.2:7880
+insecure: true
+
+redis:
+  address: redis:6379
+
+logging:
+  level: debug
+
+storage:
+  s3:
+    access_key: minioadmin
+    secret: minioadmin123
+    region: us-east-1
+    endpoint: http://minio:9000
+    bucket: virtual-branch
+    force_path_style: true

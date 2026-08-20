@@ -1,0 +1,20 @@
+[
+  {
+    "origin": [
+      "*",
+      "http://localhost:5173",
+      "https://vb-agent-web-215046327377.asia-southeast1.run.app",
+      "https://vb-agent-web-ag433b2hna-as.a.run.app"
+    ],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Range",
+      "Accept-Ranges",
+      "Range",
+      "ETag"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

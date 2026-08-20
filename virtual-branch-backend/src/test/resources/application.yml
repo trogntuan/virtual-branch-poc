@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/virtual_branch
+    username: virtual_branch
+    password: virtual_branch
+
+virtual-branch:
+  livekit:
+    api-key: devkey
+    api-secret: virtual_branch_poc_dev_secret_2026

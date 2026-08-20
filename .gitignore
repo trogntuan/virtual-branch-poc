@@ -1,0 +1,28 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+infra/.env
+infra/gcp/vb-storage-sa.json
+**/*-sa.json
+**/*.pem
+**/*.p12
+
+# Backend
+virtual-branch-backend/target/
+virtual-branch-backend/.mvn/wrapper/maven-wrapper.jar
+
+# Frontend
+agent-web/node_modules/
+agent-web/dist/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
+*.swp
+
+# Docker / local data
+infra/data/

@@ -1,0 +1,53 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: virtual-branch-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/virtual_branch
+    username: virtual_branch
+    password: virtual_branch
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+
+virtual-branch:
+  cors:
+    allowed-origins: http://localhost:5173
+  livekit:
+    api-url: ${VB_LIVEKIT_API_URL:http://localhost:7880}
+    ws-url: ${VB_LIVEKIT_WS_URL:ws://localhost:7880}
+    api-key: ${LIVEKIT_API_KEY:devkey}
+    api-secret: ${LIVEKIT_API_SECRET:virtual_branch_poc_dev_secret_2026}
+  storage:
+    provider: ${VB_STORAGE_PROVIDER:s3}
+    endpoint: ${VB_STORAGE_ENDPOINT:http://localhost:9000}
+    bucket: ${VB_STORAGE_BUCKET:virtual-branch}
+    access-key: ${STORAGE_ACCESS_KEY:minioadmin}
+    secret-key: ${STORAGE_SECRET_KEY:minioadmin123}
+    region: ${VB_STORAGE_REGION:}
+    force-path-style: ${VB_STORAGE_FORCE_PATH_STYLE:true}
+    gcs-credentials-path: ${GOOGLE_APPLICATION_CREDENTIALS:}
+    gcs-credentials-json: ${VB_GCS_SA_JSON:}
+  egress-storage:
+    bucket: ${VB_EGRESS_BUCKET:}
+    endpoint: ${VB_EGRESS_ENDPOINT:}
+    access-key: ${VB_EGRESS_ACCESS_KEY:}
+    secret-key: ${VB_EGRESS_SECRET_KEY:}
+    region: ${VB_EGRESS_REGION:auto}
+    force-path-style: ${VB_EGRESS_FORCE_PATH_STYLE:true}
+
+logging:
+  level:
+    com.example.virtualbranch: INFO
+    org.springframework.web: WARN
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
