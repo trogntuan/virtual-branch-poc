@@ -66,6 +66,7 @@ export function AgentCallPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectAttemptedRef = useRef(false);
   const autoRecordStartedRef = useRef(false);
+  const collabRequestInFlightRef = useRef(false);
 
   const {
     connect,
@@ -103,6 +104,7 @@ export function AgentCallPage() {
     room,
     role: 'AGENT',
     sessionId,
+    destinationIdentity: session?.customerIdentity ?? null,
   });
 
   const isConnected = connectionState === 'CONNECTED' || connectionState === 'RECONNECTING';
@@ -314,6 +316,10 @@ export function AgentCallPage() {
 
   async function handleRequestCollab() {
     if (!sessionId || !document) return;
+    if (collabRequestInFlightRef.current || collabBusy) return;
+    if (collab && (collab.status === 'REQUESTED' || collab.status === 'ACTIVE')) return;
+
+    collabRequestInFlightRef.current = true;
     setCollabBusy(true);
     setPageError(null);
     try {
@@ -324,6 +330,7 @@ export function AgentCallPage() {
     } catch (cause) {
       setPageError(cause instanceof Error ? cause.message : 'Không bắt đầu được chia sẻ tài liệu.');
     } finally {
+      collabRequestInFlightRef.current = false;
       setCollabBusy(false);
     }
   }

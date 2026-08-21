@@ -12,6 +12,8 @@ interface UseDocCollabOptions {
   room: Room | null;
   role: 'AGENT' | 'CUSTOMER';
   sessionId: string | null;
+  /** When set, agent data packets are only sent to this identity (customer). */
+  destinationIdentity?: string | null;
 }
 
 async function waitForRoomConnected(room: Room, timeoutMs = 8000): Promise<void> {
@@ -43,13 +45,14 @@ async function waitForRoomConnected(room: Room, timeoutMs = 8000): Promise<void>
   });
 }
 
-export function useDocCollab({ room, role, sessionId }: UseDocCollabOptions) {
+export function useDocCollab({ room, role, sessionId, destinationIdentity }: UseDocCollabOptions) {
   const [viewState, setViewState] = useState<DocCollabViewState>(DEFAULT_VIEW_STATE);
   const [pendingRequest, setPendingRequest] = useState<DocCollabEvent<{ fileName: string }> | null>(null);
   const [collabEnded, setCollabEnded] = useState(false);
   const sequenceRef = useRef(0);
   const lastSequenceRef = useRef(0);
   const pendingCollabIdRef = useRef<string | null>(null);
+  const sentCollabRequestIdsRef = useRef<Set<string>>(new Set());
 
   const publish = useCallback(
     async (event: Omit<DocCollabEvent, 'sequence' | 'timestamp' | 'version'>) => {
@@ -70,14 +73,28 @@ export function useDocCollab({ room, role, sessionId }: UseDocCollabOptions) {
 
       const reliable = RELIABLE_EVENTS.has(event.type);
       const encoded = new TextEncoder().encode(JSON.stringify(payload));
+      const options: {
+        reliable: boolean;
+        topic: string;
+        destinationIdentities?: string[];
+      } = {
+        reliable,
+        topic: DOC_COLLAB_TOPIC,
+      };
+      if (destinationIdentity) {
+        options.destinationIdentities = [destinationIdentity];
+      }
+
+      // COLLAB_REQUEST must be exactly one wire send — retries can deliver duplicates.
+      if (event.type === 'COLLAB_REQUEST') {
+        await room.localParticipant.publishData(encoded, options);
+        return;
+      }
 
       let lastError: unknown;
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
-          await room.localParticipant.publishData(encoded, {
-            reliable,
-            topic: DOC_COLLAB_TOPIC,
-          });
+          await room.localParticipant.publishData(encoded, options);
           return;
         } catch (cause) {
           lastError = cause;
@@ -88,7 +105,7 @@ export function useDocCollab({ room, role, sessionId }: UseDocCollabOptions) {
         ? lastError
         : new Error('Không gửi được sự kiện Doc Collab qua Data Channel.');
     },
-    [room, role],
+    [room, role, destinationIdentity],
   );
 
   const applyEvent = useCallback(
@@ -110,7 +127,10 @@ export function useDocCollab({ room, role, sessionId }: UseDocCollabOptions) {
       switch (event.type) {
         case 'COLLAB_REQUEST':
           if (role === 'CUSTOMER') {
-            // Keep showing consent; allow refresh of same/newer request payload.
+            // Ignore duplicate requests for the same collabId (agent retries / redelivery).
+            if (pendingCollabIdRef.current === event.collabId) {
+              break;
+            }
             pendingCollabIdRef.current = event.collabId;
             setPendingRequest(event as DocCollabEvent<{ fileName: string }>);
             setCollabEnded(false);
@@ -177,6 +197,7 @@ export function useDocCollab({ room, role, sessionId }: UseDocCollabOptions) {
         case 'COLLAB_END':
           setCollabEnded(true);
           pendingCollabIdRef.current = null;
+          sentCollabRequestIdsRef.current.delete(event.collabId);
           setPendingRequest(null);
           setViewState(DEFAULT_VIEW_STATE);
           break;
@@ -214,13 +235,22 @@ export function useDocCollab({ room, role, sessionId }: UseDocCollabOptions) {
 
   const sendCollabRequest = useCallback(
     async (collabId: string, documentId: string, fileName: string) => {
-      await publish({
-        type: 'COLLAB_REQUEST',
-        collabId,
-        sessionId: sessionId ?? '',
-        documentId,
-        data: { fileName },
-      });
+      if (sentCollabRequestIdsRef.current.has(collabId)) {
+        return;
+      }
+      sentCollabRequestIdsRef.current.add(collabId);
+      try {
+        await publish({
+          type: 'COLLAB_REQUEST',
+          collabId,
+          sessionId: sessionId ?? '',
+          documentId,
+          data: { fileName },
+        });
+      } catch (cause) {
+        sentCollabRequestIdsRef.current.delete(collabId);
+        throw cause;
+      }
     },
     [publish, sessionId],
   );
