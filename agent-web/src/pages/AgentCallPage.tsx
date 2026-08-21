@@ -225,7 +225,7 @@ export function AgentCallPage() {
     }
   }
 
-  function startCollabPolling(collabId: string, documentId: string, fileName: string) {
+  function startCollabPolling(collabId: string, documentId: string) {
     stopCollabPolling();
     pollRef.current = setInterval(async () => {
       try {
@@ -320,7 +320,7 @@ export function AgentCallPage() {
       const started = await startDocCollab(sessionId, document.documentId);
       setCollab(started);
       await sendCollabRequest(started.collabId, document.documentId, document.fileName);
-      startCollabPolling(started.collabId, document.documentId, document.fileName);
+      startCollabPolling(started.collabId, document.documentId);
     } catch (cause) {
       setPageError(cause instanceof Error ? cause.message : 'Không bắt đầu được chia sẻ tài liệu.');
     } finally {
