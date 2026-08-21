@@ -227,18 +227,10 @@ export function AgentCallPage() {
 
   function startCollabPolling(collabId: string, documentId: string, fileName: string) {
     stopCollabPolling();
-    let resendTick = 0;
     pollRef.current = setInterval(async () => {
       try {
         const status = await getDocCollab(collabId);
         setCollab(status);
-        if (status.status === 'REQUESTED') {
-          resendTick += 1;
-          // Re-broadcast every ~2s while waiting so mobile still receives if first packet was missed.
-          if (resendTick % 2 === 1) {
-            await sendCollabRequest(collabId, documentId, fileName);
-          }
-        }
         if (status.status === 'ACTIVE') {
           stopCollabPolling();
           await sendDocState(collabId, documentId, viewState);
@@ -327,8 +319,6 @@ export function AgentCallPage() {
     try {
       const started = await startDocCollab(sessionId, document.documentId);
       setCollab(started);
-      await sendCollabRequest(started.collabId, document.documentId, document.fileName);
-      // Immediate second send helps when the first packet races the customer's listener.
       await sendCollabRequest(started.collabId, document.documentId, document.fileName);
       startCollabPolling(started.collabId, document.documentId, document.fileName);
     } catch (cause) {
