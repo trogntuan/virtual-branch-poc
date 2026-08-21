@@ -32,6 +32,12 @@ function AgentShellInner() {
           </span>
         </nav>
         <div className="vb-sidebar-footer">
+          <Link to="/infra-load-test" className="vb-nav-item vb-nav-item--muted">
+            <span className="vb-nav-icon" aria-hidden>
+              ▣
+            </span>
+            <span className="vb-nav-label">Đo lường hạ tầng</span>
+          </Link>
           <Link to="/customer-test" className="vb-nav-item vb-nav-item--muted">
             <span className="vb-nav-icon" aria-hidden>
               ▤

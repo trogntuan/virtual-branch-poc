@@ -3,6 +3,7 @@ package com.example.virtualbranch.recording;
 import com.example.virtualbranch.common.BusinessException;
 import com.example.virtualbranch.common.ErrorCode;
 import com.example.virtualbranch.config.LiveKitProperties;
+import com.example.virtualbranch.config.RecordingProperties;
 import com.example.virtualbranch.storage.EgressPlaybackUrlService;
 import com.example.virtualbranch.storage.EgressStorageConfigurer;
 import com.example.virtualbranch.storage.ObjectStorageService;
@@ -16,7 +17,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import livekit.LivekitEgress;
+import livekit.LivekitModels;
 import io.livekit.server.EgressServiceClient;
+import io.livekit.server.EncodedOutputs;
+import io.livekit.server.RoomServiceClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -37,6 +41,7 @@ public class RecordingService {
     private final SessionRepository sessionRepository;
     private final RecordingRepository recordingRepository;
     private final LiveKitProperties liveKitProperties;
+    private final RecordingProperties recordingProperties;
     private final ObjectStorageService objectStorageService;
     private final EgressPlaybackUrlService egressPlaybackUrlService;
     private final EgressStorageConfigurer egressStorageConfigurer;
@@ -45,6 +50,7 @@ public class RecordingService {
             SessionRepository sessionRepository,
             RecordingRepository recordingRepository,
             LiveKitProperties liveKitProperties,
+            RecordingProperties recordingProperties,
             ObjectStorageService objectStorageService,
             EgressPlaybackUrlService egressPlaybackUrlService,
             EgressStorageConfigurer egressStorageConfigurer
@@ -52,6 +58,7 @@ public class RecordingService {
         this.sessionRepository = sessionRepository;
         this.recordingRepository = recordingRepository;
         this.liveKitProperties = liveKitProperties;
+        this.recordingProperties = recordingProperties;
         this.objectStorageService = objectStorageService;
         this.egressPlaybackUrlService = egressPlaybackUrlService;
         this.egressStorageConfigurer = egressStorageConfigurer;
@@ -81,35 +88,45 @@ public class RecordingService {
                 null
         );
         recordingRepository.save(recording);
-        log.info("Recording start requested sessionId={} recordingId={}", sessionId, recordingId);
+        log.info(
+                "Recording start requested sessionId={} recordingId={} mode={} encode={}x{}@{}fps {}kbps",
+                sessionId,
+                recordingId,
+                recordingProperties.useParticipantEgress() ? "PARTICIPANT" : "ROOM_COMPOSITE",
+                recordingProperties.resolvedWidth(),
+                recordingProperties.resolvedHeight(),
+                recordingProperties.resolvedFramerate(),
+                recordingProperties.resolvedVideoBitrate()
+        );
 
         EgressServiceClient egressClient = createEgressClient();
         validateEgressStorageForLiveKitCloud();
 
         LivekitEgress.EncodedFileOutput.Builder outputBuilder = LivekitEgress.EncodedFileOutput.newBuilder()
                 .setFileType(LivekitEgress.EncodedFileType.MP4)
-                // objectKey is relative to the bucket root (eg: recordings/<session>/<rec>.mp4)
                 .setFilepath(objectKey);
         attachStorageUpload(outputBuilder);
         LivekitEgress.EncodedFileOutput encodedOutput = outputBuilder.build();
 
         try {
-            Call<LivekitEgress.EgressInfo> call = egressClient.startRoomCompositeEgress(
-                    session.getRoomName(),
-                    encodedOutput,
-                    "grid",
-                    LivekitEgress.EncodingOptionsPreset.H264_720P_30,
-                    null,
-                    false,
-                    false,
-                    "",
-                    io.livekit.server.AudioMixing.DEFAULT_MIXING
-            );
+            Call<LivekitEgress.EgressInfo> call = recordingProperties.useParticipantEgress()
+                    ? startParticipantEgressCall(egressClient, session, encodedOutput)
+                    : startRoomCompositeEgressCall(egressClient, session, encodedOutput);
+
             Response<LivekitEgress.EgressInfo> response = call.execute();
             if (!response.isSuccessful() || response.body() == null) {
+                String detail = "HTTP " + response.code();
+                try {
+                    if (response.errorBody() != null) {
+                        detail = detail + ": " + response.errorBody().string();
+                    }
+                } catch (Exception ignored) {
+                    // keep status code only
+                }
                 throw new BusinessException(
                         ErrorCode.RECORDING_START_FAILED,
-                        "LiveKit Egress start failed: HTTP " + response.code(),
+                        "LiveKit Egress start failed: " + detail
+                                + " (often egress CPU admission — lower cpu_cost in infra/egress.yaml or add egress workers)",
                         HttpStatus.BAD_GATEWAY
                 );
             }
@@ -145,6 +162,114 @@ public class RecordingService {
                     HttpStatus.BAD_GATEWAY
             );
         }
+    }
+
+    private Call<LivekitEgress.EgressInfo> startRoomCompositeEgressCall(
+            EgressServiceClient egressClient,
+            SessionEntity session,
+            LivekitEgress.EncodedFileOutput encodedOutput
+    ) {
+        LivekitEgress.EncodingOptionsPreset preset = null;
+        LivekitEgress.EncodingOptions advanced = null;
+        if (recordingProperties.useCustomEncoding()) {
+            advanced = buildEncodingOptions();
+        } else {
+            preset = LivekitEgress.EncodingOptionsPreset.H264_720P_30;
+        }
+        return egressClient.startRoomCompositeEgress(
+                session.getRoomName(),
+                encodedOutput,
+                "grid",
+                preset,
+                advanced,
+                false,
+                false,
+                "",
+                io.livekit.server.AudioMixing.DEFAULT_MIXING
+        );
+    }
+
+    private Call<LivekitEgress.EgressInfo> startParticipantEgressCall(
+            EgressServiceClient egressClient,
+            SessionEntity session,
+            LivekitEgress.EncodedFileOutput encodedOutput
+    ) throws IOException {
+        String identity = resolveParticipantIdentity(session);
+        EncodedOutputs outputs = new EncodedOutputs(encodedOutput, null, null, null);
+        LivekitEgress.EncodingOptionsPreset preset = null;
+        LivekitEgress.EncodingOptions advanced = null;
+        if (recordingProperties.useCustomEncoding()) {
+            advanced = buildEncodingOptions();
+        } else {
+            preset = LivekitEgress.EncodingOptionsPreset.H264_720P_30;
+        }
+        log.info(
+                "Starting PARTICIPANT egress room={} identity={} screenShare=false",
+                session.getRoomName(),
+                identity
+        );
+        return egressClient.startParticipantEgress(
+                session.getRoomName(),
+                identity,
+                outputs,
+                false,
+                preset,
+                advanced
+        );
+    }
+
+    private LivekitEgress.EncodingOptions buildEncodingOptions() {
+        return LivekitEgress.EncodingOptions.newBuilder()
+                .setWidth(recordingProperties.resolvedWidth())
+                .setHeight(recordingProperties.resolvedHeight())
+                .setFramerate(recordingProperties.resolvedFramerate())
+                .setVideoBitrate(recordingProperties.resolvedVideoBitrate())
+                .setVideoCodec(livekit.LivekitModels.VideoCodec.H264_MAIN)
+                .setAudioCodec(livekit.LivekitModels.AudioCodec.AAC)
+                .setAudioBitrate(128)
+                .setAudioFrequency(44100)
+                .build();
+    }
+
+    private String resolveParticipantIdentity(SessionEntity session) throws IOException {
+        String preferred;
+        String fallback;
+        if (recordingProperties.preferCustomer()) {
+            preferred = session.getCustomerIdentity();
+            fallback = session.getAgentIdentity();
+        } else {
+            preferred = session.getAgentIdentity();
+            fallback = session.getCustomerIdentity();
+        }
+
+        if (preferred != null && !preferred.isBlank()) {
+            return preferred;
+        }
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+
+        RoomServiceClient roomClient = RoomServiceClient.create(
+                liveKitProperties.apiUrl(),
+                liveKitProperties.apiKey(),
+                liveKitProperties.apiSecret(),
+                false
+        );
+        Response<List<LivekitModels.ParticipantInfo>> response =
+                roomClient.listParticipants(session.getRoomName()).execute();
+        if (!response.isSuccessful() || response.body() == null || response.body().isEmpty()) {
+            throw new BusinessException(
+                    ErrorCode.RECORDING_START_FAILED,
+                    "No participant identity available for PARTICIPANT egress",
+                    HttpStatus.BAD_REQUEST
+            );
+        }
+
+        Optional<LivekitModels.ParticipantInfo> withVideo = response.body().stream()
+                .filter(p -> p.getTracksList().stream().anyMatch(t ->
+                        t.getType() == LivekitModels.TrackType.VIDEO && !t.getMuted()))
+                .findFirst();
+        return withVideo.orElse(response.body().get(0)).getIdentity();
     }
 
     @Transactional

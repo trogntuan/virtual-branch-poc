@@ -1,5 +1,9 @@
 port: 7880
 
+# Prometheus scrape for SFU sizing (http://localhost:6789/metrics)
+prometheus:
+  port: 6789
+
 log_level: debug
 
 rtc:
@@ -10,7 +14,7 @@ rtc:
   use_ice_lite: true
   # Host LAN IP — egress in Docker and browsers on host must reach this for WebRTC.
   # Mac: `ipconfig getifaddr en0`  |  override at start: livekit-server --node-ip <ip>
-  node_ip: 172.20.10.2
+  node_ip: 192.168.21.136
 
 redis:
   address: localhost:6379

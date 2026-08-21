@@ -27,6 +27,15 @@ virtual-branch:
     ws-url: ${VB_LIVEKIT_WS_URL:ws://localhost:7880}
     api-key: ${LIVEKIT_API_KEY:devkey}
     api-secret: ${LIVEKIT_API_SECRET:virtual_branch_poc_dev_secret_2026}
+  recording:
+    # PARTICIPANT = lighter SDK egress (1 side). ROOM_COMPOSITE = grid both sides (heavier).
+    egress-mode: ${VB_EGRESS_MODE:ROOM_COMPOSITE}
+    participant-prefer: ${VB_EGRESS_PARTICIPANT_PREFER:AGENT}
+    # Lower than H264_720P_30 to cut egress CPU while keeping both sides.
+    width: ${VB_EGRESS_WIDTH:854}
+    height: ${VB_EGRESS_HEIGHT:480}
+    framerate: ${VB_EGRESS_FRAMERATE:15}
+    video-bitrate: ${VB_EGRESS_VIDEO_BITRATE:1000}
   storage:
     provider: ${VB_STORAGE_PROVIDER:s3}
     endpoint: ${VB_STORAGE_ENDPOINT:http://localhost:9000}
