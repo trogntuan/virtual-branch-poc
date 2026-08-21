@@ -124,9 +124,10 @@ public class DocumentService {
         try {
             return objectStorageService.presignGetUrl(objectKey, READ_URL_EXPIRY_SECONDS);
         } catch (StorageOperationException e) {
+            log.warn("Failed to generate read URL for {}: {}", objectKey, e.getMessage());
             throw new BusinessException(
                     ErrorCode.STORAGE_UPLOAD_FAILED,
-                    "Failed to generate read URL",
+                    "Failed to generate read URL: " + e.getMessage(),
                     HttpStatus.INTERNAL_SERVER_ERROR
             );
         }

@@ -3,6 +3,7 @@ package com.example.virtualbranch.recording;
 import com.example.virtualbranch.common.BusinessException;
 import com.example.virtualbranch.common.ErrorCode;
 import com.example.virtualbranch.config.LiveKitProperties;
+import com.example.virtualbranch.settings.AppSettingService;
 import com.example.virtualbranch.storage.EgressPlaybackUrlService;
 import com.example.virtualbranch.storage.EgressStorageConfigurer;
 import com.example.virtualbranch.storage.ObjectStorageService;
@@ -37,6 +38,7 @@ public class RecordingService {
     private final SessionRepository sessionRepository;
     private final RecordingRepository recordingRepository;
     private final LiveKitProperties liveKitProperties;
+    private final AppSettingService appSettingService;
     private final ObjectStorageService objectStorageService;
     private final EgressPlaybackUrlService egressPlaybackUrlService;
     private final EgressStorageConfigurer egressStorageConfigurer;
@@ -45,6 +47,7 @@ public class RecordingService {
             SessionRepository sessionRepository,
             RecordingRepository recordingRepository,
             LiveKitProperties liveKitProperties,
+            AppSettingService appSettingService,
             ObjectStorageService objectStorageService,
             EgressPlaybackUrlService egressPlaybackUrlService,
             EgressStorageConfigurer egressStorageConfigurer
@@ -52,6 +55,7 @@ public class RecordingService {
         this.sessionRepository = sessionRepository;
         this.recordingRepository = recordingRepository;
         this.liveKitProperties = liveKitProperties;
+        this.appSettingService = appSettingService;
         this.objectStorageService = objectStorageService;
         this.egressPlaybackUrlService = egressPlaybackUrlService;
         this.egressStorageConfigurer = egressStorageConfigurer;
@@ -59,6 +63,15 @@ public class RecordingService {
 
     @Transactional
     public RecordingResponse startRecording(String sessionId) {
+        if (!appSettingService.isRecordingEnabled()) {
+            log.info("Recording start rejected (disabled in DB) sessionId={}", sessionId);
+            throw new BusinessException(
+                    ErrorCode.RECORDING_DISABLED,
+                    ErrorCode.RECORDING_DISABLED.getDefaultMessage(),
+                    HttpStatus.SERVICE_UNAVAILABLE
+            );
+        }
+
         SessionEntity session = requireSession(sessionId);
         if (session.getStatus() == com.example.virtualbranch.session.SessionStatus.ENDED) {
             throw new BusinessException(ErrorCode.SESSION_ENDED);

@@ -7,7 +7,12 @@ import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
-@EnableConfigurationProperties({LiveKitProperties.class, StorageProperties.class, EgressStorageProperties.class, CorsProperties.class})
+@EnableConfigurationProperties({
+        LiveKitProperties.class,
+        StorageProperties.class,
+        EgressStorageProperties.class,
+        CorsProperties.class
+})
 public class WebConfig implements WebMvcConfigurer {
 
     private final CorsProperties corsProperties;

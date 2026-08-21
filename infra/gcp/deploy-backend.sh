@@ -10,6 +10,10 @@ REPO="${ARTIFACT_REPO:-vb}"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/backend:latest"
 SQL_INSTANCE="${PROJECT}:${REGION}:vb-poc-db"
 BUCKET="${VB_STORAGE_BUCKET:-project-4cd8e655-vb-poc}"
+if [[ "$BUCKET" == "virtual-branch" ]]; then
+  echo "WARN: VB_STORAGE_BUCKET=virtual-branch looks like local MinIO; using project-4cd8e655-vb-poc"
+  BUCKET="project-4cd8e655-vb-poc"
+fi
 
 ENV_FILE="${ROOT}/infra/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -45,27 +49,30 @@ echo "==> Grant Cloud Run default SA access to GCS bucket gs://$BUCKET"
 gsutil iam ch "serviceAccount:${RUN_SA}:objectAdmin" "gs://${BUCKET}" 2>/dev/null || true
 
 echo "==> Ensure Secret Manager entries"
-if ! gcloud secrets describe vb-livekit-secret --project="$PROJECT" >/dev/null 2>&1; then
-  echo -n "$LIVEKIT_API_SECRET" | gcloud secrets create vb-livekit-secret --data-file=-
-else
-  echo -n "$LIVEKIT_API_SECRET" | gcloud secrets versions add vb-livekit-secret --data-file=-
-fi
+# Only create/update secrets when explicitly requested — avoids overwriting
+# Cloud HMAC/R2 secrets with local MinIO values from infra/.env.
+UPDATE_SECRETS="${UPDATE_SECRETS:-false}"
 
-if [[ -n "${STORAGE_SECRET_KEY:-}" ]]; then
-  if ! gcloud secrets describe vb-storage-secret --project="$PROJECT" >/dev/null 2>&1; then
-    echo -n "$STORAGE_SECRET_KEY" | gcloud secrets create vb-storage-secret --data-file=-
-  else
-    echo -n "$STORAGE_SECRET_KEY" | gcloud secrets versions add vb-storage-secret --data-file=-
+ensure_secret() {
+  local name="$1"
+  local value="$2"
+  if [[ -z "$value" ]]; then
+    return 0
   fi
-fi
+  if ! gcloud secrets describe "$name" --project="$PROJECT" >/dev/null 2>&1; then
+    echo -n "$value" | gcloud secrets create "$name" --data-file=-
+  elif [[ "$UPDATE_SECRETS" == "true" ]]; then
+    echo -n "$value" | gcloud secrets versions add "$name" --data-file=-
+  else
+    echo "Keep existing secret $name (set UPDATE_SECRETS=true to overwrite)"
+  fi
+}
 
+ensure_secret vb-livekit-secret "${LIVEKIT_API_SECRET:-}"
+ensure_secret vb-storage-secret "${STORAGE_SECRET_KEY:-}"
 if [[ -n "${VB_EGRESS_SECRET_KEY:-}" ]]; then
   echo "==> Ensure R2 egress secret"
-  if ! gcloud secrets describe vb-egress-secret --project="$PROJECT" >/dev/null 2>&1; then
-    echo -n "$VB_EGRESS_SECRET_KEY" | gcloud secrets create vb-egress-secret --data-file=-
-  else
-    echo -n "$VB_EGRESS_SECRET_KEY" | gcloud secrets versions add vb-egress-secret --data-file=-
-  fi
+  ensure_secret vb-egress-secret "$VB_EGRESS_SECRET_KEY"
 else
   echo "WARN: VB_EGRESS_SECRET_KEY not set — LiveKit Cloud recording will fail until R2 is configured."
 fi

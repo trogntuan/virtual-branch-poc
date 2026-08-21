@@ -1,12 +1,42 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { AgentChromeProvider, useAgentChrome } from './AgentChromeContext';
+import { getRecordingSetting, setRecordingSetting } from '../api/virtualBranchApi';
 import { AGENT_WEB_BUILD } from '../buildId';
+import { AgentChromeProvider, useAgentChrome } from './AgentChromeContext';
 
 function AgentShellInner() {
   const location = useLocation();
   const { pageTitle, recordingState, headerExtra } = useAgentChrome();
   const onCall = location.pathname.startsWith('/agent/call');
   const onQueue = location.pathname === '/agent' || location.pathname === '/agent/';
+  const [recordingEnabled, setRecordingEnabled] = useState(false);
+  const [recordingBusy, setRecordingBusy] = useState(false);
+
+  const refreshRecordingSetting = useCallback(async () => {
+    try {
+      const setting = await getRecordingSetting();
+      setRecordingEnabled(setting.enabled);
+    } catch {
+      // keep previous value
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRecordingSetting();
+  }, [refreshRecordingSetting]);
+
+  async function handleToggleRecording() {
+    const next = !recordingEnabled;
+    setRecordingBusy(true);
+    try {
+      const updated = await setRecordingSetting(next);
+      setRecordingEnabled(updated.enabled);
+    } catch {
+      await refreshRecordingSetting();
+    } finally {
+      setRecordingBusy(false);
+    }
+  }
 
   return (
     <div className="vb-shell">
@@ -33,6 +63,26 @@ function AgentShellInner() {
           </span>
         </nav>
         <div className="vb-sidebar-footer">
+          <button
+            type="button"
+            className={
+              recordingEnabled
+                ? 'vb-setting-toggle vb-setting-toggle--on'
+                : 'vb-setting-toggle'
+            }
+            onClick={() => void handleToggleRecording()}
+            disabled={recordingBusy || onCall}
+            title={
+              onCall
+                ? 'Không đổi trong lúc đang gọi'
+                : 'Bật/tắt ghi hình (lưu DB, không cần deploy)'
+            }
+          >
+            <span className="vb-setting-toggle-label">Ghi hình</span>
+            <span className="vb-setting-toggle-state">
+              {recordingBusy ? '…' : recordingEnabled ? 'Bật' : 'Tắt'}
+            </span>
+          </button>
           <Link to="/customer-test" className="vb-nav-item vb-nav-item--muted">
             <span className="vb-nav-icon" aria-hidden>
               ▤

@@ -249,3 +249,18 @@ export async function getCollabDocumentUrl(collabId: string): Promise<DocumentUr
 export async function endDocCollab(collabId: string): Promise<DocCollabResponse> {
   return request<DocCollabResponse>(`/api/v1/doc-collabs/${collabId}/end`, { method: 'POST' });
 }
+
+export interface RecordingSettingResponse {
+  enabled: boolean;
+}
+
+export async function getRecordingSetting(): Promise<RecordingSettingResponse> {
+  return request<RecordingSettingResponse>('/api/v1/settings/recording');
+}
+
+export async function setRecordingSetting(enabled: boolean): Promise<RecordingSettingResponse> {
+  return request<RecordingSettingResponse>('/api/v1/settings/recording', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
+}

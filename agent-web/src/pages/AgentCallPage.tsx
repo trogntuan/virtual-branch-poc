@@ -5,6 +5,7 @@ import {
   endDocCollab,
   getMobileDisplay,
   getDocCollab,
+  getRecordingSetting,
   getSession,
   issueToken,
   startDocCollab,
@@ -27,8 +28,11 @@ import { useLiveKitRoom } from '../livekit/useLiveKitRoom';
 import { useAgentChrome } from '../layout/AgentChromeContext';
 import { useRecording } from '../recording/useRecording';
 import { collabStatusLabel } from '../i18n/labels';
+import demoContractPdfUrl from '../docs/Hợp đồng (demo).pdf?url';
 
 const COLLAB_POLL_MS = 1000;
+const DEMO_PDF_NAME = 'Hợp đồng (demo).pdf';
+const DEMO_PDF_SIZE_BYTES = 179_631;
 
 type PostCallPhase = null | 'saving' | 'ready' | 'failed';
 
@@ -61,6 +65,8 @@ export function AgentCallPage() {
   const [elapsed, setElapsed] = useState(0);
   const [postCallPhase, setPostCallPhase] = useState<PostCallPhase>(null);
   const [finalRecording, setFinalRecording] = useState<RecordingResponse | null>(null);
+  const [recordingEnabled, setRecordingEnabled] = useState(false);
+  const [recordingSettingLoaded, setRecordingSettingLoaded] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -123,6 +129,26 @@ export function AgentCallPage() {
       setHeaderExtra(null);
     };
   }, [setPageTitle, setRecordingState, setHeaderExtra]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getRecordingSetting()
+      .then((setting) => {
+        if (!cancelled) {
+          setRecordingEnabled(setting.enabled);
+          setRecordingSettingLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecordingEnabled(false);
+          setRecordingSettingLoaded(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (postCallPhase === 'saving') {
@@ -193,14 +219,15 @@ export function AgentCallPage() {
     };
   }, [sessionId, navigate, connectToRoom, disconnect]);
 
-  // Auto-start recording when connected
+  // Auto-start recording when connected (gated by DB setting recording.enabled)
   useEffect(() => {
+    if (!recordingSettingLoaded || !recordingEnabled) return;
     if (!sessionId || !isConnected || autoRecordStartedRef.current || postCallPhase != null) return;
     autoRecordStartedRef.current = true;
     void startRecording(sessionId).catch(() => {
       autoRecordStartedRef.current = false;
     });
-  }, [sessionId, isConnected, startRecording, postCallPhase]);
+  }, [sessionId, isConnected, startRecording, postCallPhase, recordingEnabled, recordingSettingLoaded]);
 
   useEffect(() => {
     if (!sessionId || !isConnected) return;
@@ -250,15 +277,20 @@ export function AgentCallPage() {
     if (!sessionId || postCallPhase != null) return;
     setBusy(true);
     setPageError(null);
-    setPostCallPhase('saving');
-    setRecordingState('uploading');
+
+    if (recordingEnabled) {
+      setPostCallPhase('saving');
+      setRecordingState('uploading');
+    }
 
     try {
       let finished: RecordingResponse | null = null;
-      try {
-        finished = await stopAndWaitRecording();
-      } catch {
-        // continue ending call even if recording fails
+      if (recordingEnabled) {
+        try {
+          finished = await stopAndWaitRecording();
+        } catch {
+          // continue ending call even if recording fails
+        }
       }
 
       if (collab && collab.status === 'ACTIVE') {
@@ -280,6 +312,11 @@ export function AgentCallPage() {
       }
       await disconnect();
 
+      if (!recordingEnabled) {
+        goBackToQueue();
+        return;
+      }
+
       setFinalRecording(finished);
       if (finished?.status === 'COMPLETED' && finished.playbackUrl) {
         setPostCallPhase('ready');
@@ -290,7 +327,11 @@ export function AgentCallPage() {
       }
     } catch (cause) {
       setPageError(cause instanceof Error ? cause.message : 'Không kết thúc được cuộc gọi.');
-      setPostCallPhase('failed');
+      if (recordingEnabled) {
+        setPostCallPhase('failed');
+      } else {
+        goBackToQueue();
+      }
     } finally {
       setBusy(false);
       setRecordingState('idle');
@@ -311,6 +352,27 @@ export function AgentCallPage() {
     } finally {
       setUploadBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function handleSendDemoPdf() {
+    if (!sessionId || !isConnected || uploadBusy || busy || document) return;
+    setUploadBusy(true);
+    setPageError(null);
+    try {
+      const response = await fetch(demoContractPdfUrl);
+      if (!response.ok) {
+        throw new Error('Không tải được file PDF mẫu.');
+      }
+      const blob = await response.blob();
+      const file = new File([blob], DEMO_PDF_NAME, { type: 'application/pdf' });
+      const uploaded = await uploadDocument(sessionId, file);
+      setDocument(uploaded);
+      setCollab(null);
+    } catch (cause) {
+      setPageError(cause instanceof Error ? cause.message : 'Không gửi được PDF mẫu.');
+    } finally {
+      setUploadBusy(false);
     }
   }
 
@@ -496,10 +558,32 @@ export function AgentCallPage() {
 
         <aside className="vb-chat-panel">
           <div className="vb-chat-scroll">
+            <div className="vb-pdf-message">
+              <div className="vb-pdf-bubble vb-pdf-bubble--demo">
+                <div className="vb-pdf-icon">PDF</div>
+                <div className="vb-pdf-bubble-body">
+                  <strong>{DEMO_PDF_NAME}</strong>
+                  <p className="muted">{formatBytes(DEMO_PDF_SIZE_BYTES)} · Mẫu sẵn</p>
+                </div>
+                <button
+                  type="button"
+                  className="vb-pdf-send-btn"
+                  onClick={() => void handleSendDemoPdf()}
+                  disabled={uploadBusy || busy || !isConnected || Boolean(document)}
+                  title={
+                    document
+                      ? 'Đã gửi file — dùng Yêu cầu xem cùng bên dưới'
+                      : 'Gửi PDF mẫu (upload + collab như thường)'
+                  }
+                >
+                  {uploadBusy && !document ? 'Đang gửi…' : 'Gửi'}
+                </button>
+              </div>
+            </div>
+
             {!document && (
               <div className="vb-chat-empty">
-                <p>Chỉ hỗ trợ gửi file PDF cho khách hàng.</p>
-                <p className="muted">Dùng nút đính kèm bên dưới để tải lên.</p>
+                <p>Ấn Gửi trên file mẫu, hoặc đính kèm PDF khác bên dưới.</p>
               </div>
             )}
 
@@ -581,7 +665,7 @@ export function AgentCallPage() {
             </button>
           </div>
           {uploadBusy && <p className="vb-upload-hint">Đang tải PDF lên…</p>}
-          {recordingBusy && isConnected && (
+          {recordingEnabled && recordingBusy && isConnected && (
             <p className="vb-upload-hint">Đang khởi tạo ghi hình…</p>
           )}
         </aside>

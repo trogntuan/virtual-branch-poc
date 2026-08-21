@@ -8,6 +8,7 @@ public enum ErrorCode {
     INVALID_ROLE("INVALID_ROLE", "Invalid participant role"),
     TOKEN_GENERATION_FAILED("TOKEN_GENERATION_FAILED", "Failed to generate LiveKit token"),
     RECORDING_NOT_FOUND("RECORDING_NOT_FOUND", "Recording not found"),
+    RECORDING_DISABLED("RECORDING_DISABLED", "Recording is temporarily disabled"),
     RECORDING_START_FAILED("RECORDING_START_FAILED", "Failed to start recording"),
     RECORDING_STOP_FAILED("RECORDING_STOP_FAILED", "Failed to stop recording"),
     DOCUMENT_NOT_FOUND("DOCUMENT_NOT_FOUND", "Document not found"),
