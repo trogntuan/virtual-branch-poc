@@ -1,5 +1,6 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { AgentChromeProvider, useAgentChrome } from './AgentChromeContext';
+import { AGENT_WEB_BUILD } from '../buildId';
 
 function AgentShellInner() {
   const location = useLocation();
@@ -38,6 +39,9 @@ function AgentShellInner() {
             </span>
             <span className="vb-nav-label">Mobile Test</span>
           </Link>
+          <span className="vb-build-id" title={AGENT_WEB_BUILD}>
+            {AGENT_WEB_BUILD}
+          </span>
         </div>
       </aside>
 

@@ -196,6 +196,21 @@ code {
 
 .vb-sidebar-footer {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vb-build-id {
+  display: block;
+  max-width: 100%;
+  padding: 0 0.25rem 0.35rem;
+  font-size: 0.55rem;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.55);
+  word-break: break-all;
+  text-align: center;
 }
 
 .vb-main {

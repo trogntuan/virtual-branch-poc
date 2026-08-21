@@ -240,6 +240,8 @@ export function useDocCollab({ room, role, sessionId, destinationIdentity }: Use
       }
       sentCollabRequestIdsRef.current.add(collabId);
       try {
+        // eslint-disable-next-line no-console
+        console.info('[VB] COLLAB_REQUEST once', collabId);
         await publish({
           type: 'COLLAB_REQUEST',
           collabId,
