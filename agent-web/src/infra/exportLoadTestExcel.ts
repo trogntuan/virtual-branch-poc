@@ -106,8 +106,14 @@ export function downloadLoadTestExcel(input: LoadTestExportInput): string {
     SessionId: w.sessionId,
     RecordingId: w.recordingId ?? '',
     RecordingStatus: w.recording?.status ?? '',
-    ObjectKey: w.recording?.objectKey ?? '',
-    PlaybackUrl: w.recording?.playbackUrl ?? '',
+    ObjectKey:
+      w.recording?.tracks?.map((t) => t.objectKey).filter(Boolean).join(' | ')
+      || w.recording?.objectKey
+      || '',
+    PlaybackUrl:
+      w.recording?.tracks?.map((t) => t.playbackUrl).filter(Boolean).join(' | ')
+      || w.recording?.playbackUrl
+      || '',
     DurationSec: durationSecOf(w),
     StartedAt: w.startedAt ? new Date(w.startedAt).toISOString() : '',
     StoppedAt: w.stoppedAt ? new Date(w.stoppedAt).toISOString() : '',

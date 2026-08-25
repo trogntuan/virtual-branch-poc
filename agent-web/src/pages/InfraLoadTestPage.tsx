@@ -242,24 +242,26 @@ export function InfraLoadTestPage() {
         return copy;
       });
 
+      const customerIdentity = `load-cust-${index}-${crypto.randomUUID().slice(0, 6)}`;
+      const agentIdentity = `load-agent-${index}-${crypto.randomUUID().slice(0, 6)}`;
       const waiting: SessionResponse = await requestCall(
-        `load-cust-${index}-${crypto.randomUUID().slice(0, 6)}`,
+        customerIdentity,
         `Load Customer ${index + 1}`,
         DEFAULT_MOBILE_DISPLAY,
       );
       result.sessionId = waiting.sessionId;
-      await acceptCall(waiting.sessionId, `load-agent-${index}`, `Load Agent ${index + 1}`);
+      await acceptCall(waiting.sessionId, agentIdentity, `Load Agent ${index + 1}`);
 
       customerRoom = await connectParticipant(
         waiting.sessionId,
-        `load-cust-${index}`,
+        customerIdentity,
         `Load Customer ${index + 1}`,
         'CUSTOMER',
         true,
       );
       agentRoom = await connectParticipant(
         waiting.sessionId,
-        `load-agent-${index}`,
+        agentIdentity,
         `Load Agent ${index + 1}`,
         'AGENT',
         true,
@@ -702,16 +704,34 @@ export function InfraLoadTestPage() {
                   )}
                   {w.error && <p className="infra-worker-error">{w.error}</p>}
                 </div>
-                {w.recording?.playbackUrl && (
-                  <a
-                    className="infra-worker-link"
-                    href={w.recording.playbackUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Xem MP4
-                  </a>
-                )}
+                <div className="infra-worker-links">
+                  {(w.recording?.tracks?.some((t) => t.playbackUrl)
+                    ? w.recording.tracks.filter((t) => Boolean(t.playbackUrl))
+                    : w.recording?.playbackUrl
+                      ? [
+                          {
+                            recordingId: w.recording.recordingId,
+                            side: w.recording.mode === 'DUAL_PARTICIPANT' ? 'AGENT' : 'COMPOSITE',
+                            playbackUrl: w.recording.playbackUrl,
+                          },
+                        ]
+                      : []
+                  ).map((track) => (
+                    <a
+                      key={track.recordingId}
+                      className="infra-worker-link"
+                      href={track.playbackUrl!}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {track.side === 'AGENT'
+                        ? 'Xem Agent'
+                        : track.side === 'CUSTOMER'
+                          ? 'Xem KH'
+                          : 'Xem MP4'}
+                    </a>
+                  ))}
+                </div>
               </article>
             ))}
           </div>
