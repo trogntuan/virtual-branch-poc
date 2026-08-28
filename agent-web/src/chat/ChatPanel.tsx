@@ -626,23 +626,26 @@ export function ChatPanel({
     <aside className={`vb-chat-panel ${compact ? 'vb-chat-panel--compact' : ''}`}>
       <div className="vb-chat-scroll" ref={scrollRef}>
         {demoPdf && role === 'AGENT' && (
-          <div className="vb-pdf-message">
-            <div className="vb-pdf-bubble vb-pdf-bubble--demo">
-              <div className="vb-pdf-icon">PDF</div>
-              <div className="vb-pdf-bubble-body">
-                <strong>{demoPdf.fileName}</strong>
-                <p className="muted">
-                  {formatBytes(demoPdf.sizeBytes)} · Mẫu sẵn
-                </p>
+          <div className={`vb-demo-pdf ${compact ? 'vb-demo-pdf--compact' : ''}`}>
+            <div className="vb-demo-pdf-card">
+              <div className="vb-file-icon" aria-hidden>
+                <PdfDocIcon />
+              </div>
+              <div className="vb-file-info">
+                <span className="vb-file-name">{demoPdf.fileName}</span>
+                <span className="vb-file-meta">
+                  {formatBytes(demoPdf.sizeBytes)} · PDF
+                  <span className="vb-demo-pdf-badge">Mẫu</span>
+                </span>
               </div>
               <button
                 type="button"
-                className="vb-pdf-send-btn"
+                className="vb-demo-pdf-send"
                 onClick={() => void handleSendDemoPdf()}
                 disabled={demoBusy || demoPdf.disabled || chatDisabled}
                 title="Gửi PDF mẫu qua chat"
               >
-                {demoPdfBusy ? 'Đang gửi…' : 'Gửi'}
+                {demoPdfBusy ? '…' : 'Gửi'}
               </button>
             </div>
           </div>

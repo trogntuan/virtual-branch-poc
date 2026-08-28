@@ -29,6 +29,66 @@ function attachVideoTrack(track: Track, element: HTMLVideoElement | null) {
   void element.play().catch(() => undefined);
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function isTrackPublishTimeout(cause: unknown): boolean {
+  return (
+    cause instanceof Error &&
+    cause.message.includes('publication of local track timed out')
+  );
+}
+
+function isPcTimeout(cause: unknown): boolean {
+  return cause instanceof Error && cause.message.includes('could not establish pc connection');
+}
+
+function isConnectAborted(cause: unknown): boolean {
+  return (
+    cause instanceof Error &&
+    (cause.message.includes('Connection attempt aborted') ||
+      cause.message.includes('Signal connection aborted') ||
+      cause.message.includes('cancelled'))
+  );
+}
+
+async function publishLocalMedia(room: Room, generation: number, getGeneration: () => number) {
+  const assertActive = () => {
+    if (getGeneration() !== generation) {
+      throw new Error('Connection attempt aborted');
+    }
+    if (room.state !== LiveKitConnectionState.Connected) {
+      throw new Error('Connection attempt aborted');
+    }
+  };
+
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    assertActive();
+    try {
+      // Mic first, then camera — avoids concurrent addTrack races on slow signaling.
+      await room.localParticipant.setMicrophoneEnabled(true);
+      assertActive();
+      await room.localParticipant.setCameraEnabled(true);
+      return;
+    } catch (cause) {
+      if (isConnectAborted(cause)) {
+        throw cause;
+      }
+      if (attempt < maxAttempts && isTrackPublishTimeout(cause)) {
+        await room.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+        await room.localParticipant.setCameraEnabled(false).catch(() => undefined);
+        await delay(400 * attempt);
+        continue;
+      }
+      throw cause;
+    }
+  }
+}
+
 function attachRoomVideos(
   room: Room,
   localElement: HTMLVideoElement | null,
@@ -50,6 +110,7 @@ function attachRoomVideos(
 
 export function useLiveKitRoom() {
   const roomRef = useRef<Room | null>(null);
+  const connectGenerationRef = useRef(0);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -82,6 +143,7 @@ export function useLiveKitRoom() {
   }, []);
 
   const disconnect = useCallback(async () => {
+    connectGenerationRef.current += 1;
     const current = roomRef.current;
     roomRef.current = null;
     setRoom(null);
@@ -105,6 +167,7 @@ export function useLiveKitRoom() {
   const connect = useCallback(
     async (serverUrl: string, token: string) => {
       await disconnect();
+      const generation = ++connectGenerationRef.current;
       setConnectionState('CONNECTING');
       setError(null);
 
@@ -150,11 +213,23 @@ export function useLiveKitRoom() {
 
       try {
         await nextRoom.connect(serverUrl, token, {
-          peerConnectionTimeout: 20_000,
+          peerConnectionTimeout: 25_000,
+          websocketTimeout: 20_000,
+          maxRetries: 3,
         });
 
-        await nextRoom.localParticipant.setMicrophoneEnabled(true);
-        await nextRoom.localParticipant.setCameraEnabled(true);
+        if (connectGenerationRef.current !== generation || roomRef.current !== nextRoom) {
+          return;
+        }
+
+        // Brief pause lets LiveKit Cloud finish signal/PC setup before addTrack.
+        await delay(150);
+        await publishLocalMedia(nextRoom, generation, () => connectGenerationRef.current);
+
+        if (connectGenerationRef.current !== generation || roomRef.current !== nextRoom) {
+          return;
+        }
+
         setMicEnabled(true);
         setCameraEnabled(true);
 
@@ -163,6 +238,9 @@ export function useLiveKitRoom() {
         await nextRoom.startAudio();
         setConnectionState('CONNECTED');
       } catch (cause) {
+        if (connectGenerationRef.current !== generation) {
+          return;
+        }
         if (roomRef.current === nextRoom) {
           roomRef.current = null;
           setRoom(null);
@@ -170,12 +248,18 @@ export function useLiveKitRoom() {
         nextRoom.removeAllListeners();
         await nextRoom.disconnect();
 
-        const isPcTimeout =
-          cause instanceof Error && cause.message.includes('could not establish pc connection');
+        if (isConnectAborted(cause)) {
+          setConnectionState('DISCONNECTED');
+          return;
+        }
 
-        if (isPcTimeout) {
+        if (isPcTimeout(cause)) {
           setError(
             'Không thiết lập được kết nối media (WebRTC). Thử tải lại trang; nếu vẫn lỗi, khởi động lại LiveKit (`infra/scripts/restart-livekit.sh`).',
+          );
+        } else if (isTrackPublishTimeout(cause)) {
+          setError(
+            'Không gửi được camera/micro lên LiveKit. Thử tải lại trang hoặc kiểm tra kết nối mạng.',
           );
         } else if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
           setError('Chưa được cấp quyền camera hoặc micro.');

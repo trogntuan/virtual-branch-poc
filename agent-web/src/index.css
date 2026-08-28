@@ -1928,6 +1928,36 @@ code {
   gap: 0.5rem;
 }
 
+.vb-chat-panel--compact .vb-demo-pdf-card {
+  gap: 0.4rem;
+  padding: 0.32rem 0.4rem 0.32rem 0.45rem;
+  border-radius: 8px;
+}
+
+.vb-chat-panel--compact .vb-demo-pdf-card .vb-file-icon {
+  width: 28px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.vb-chat-panel--compact .vb-demo-pdf-card .vb-file-icon-svg {
+  width: 16px;
+  height: 18px;
+}
+
+.vb-chat-panel--compact .vb-demo-pdf-card .vb-file-name {
+  font-size: 0.72rem;
+}
+
+.vb-chat-panel--compact .vb-demo-pdf-card .vb-file-meta {
+  font-size: 0.62rem;
+}
+
+.vb-chat-panel--compact .vb-demo-pdf-send {
+  padding: 0.22rem 0.5rem;
+  font-size: 0.62rem;
+}
+
 .vb-chat-panel--compact .vb-chat-message {
   gap: 0.35rem;
   max-width: 100%;
@@ -2027,61 +2057,116 @@ code {
   max-width: 220px;
 }
 
-.vb-pdf-message {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.35rem;
+.vb-demo-pdf {
+  align-self: stretch;
   max-width: 100%;
 }
 
-.vb-pdf-bubble {
+.vb-demo-pdf-card {
   display: flex;
-  gap: 0.75rem;
   align-items: center;
-  padding: 0.85rem;
-  border-radius: 12px;
-  background: #f5f8fc;
-  border: 1px solid var(--vb-border);
-  width: 100%;
-}
-
-.vb-pdf-bubble--demo {
-  background: #fffaf0;
-  border-color: #f0d9a8;
-}
-
-.vb-pdf-bubble-body {
-  flex: 1;
+  gap: 0.55rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.55rem;
+  border-radius: 10px;
+  background: #f3f7fc;
+  border: 1px solid #e2ebf5;
   min-width: 0;
 }
 
-.vb-pdf-bubble-body strong {
-  display: block;
+.vb-demo-pdf-card .vb-file-icon {
+  width: 34px;
+  height: 38px;
+  border-radius: 7px;
+}
+
+.vb-demo-pdf-card .vb-file-icon-svg {
+  width: 18px;
+  height: 21px;
+}
+
+.vb-demo-pdf-card .vb-file-name {
+  font-size: 0.78rem;
+  line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.vb-pdf-send-btn {
-  flex-shrink: 0;
-  padding: 0.4rem 0.85rem;
-  border-radius: 8px;
-  border: 1px solid #1d4ed8;
-  background: var(--vb-blue);
-  color: #fff;
-  font-size: 0.78rem;
+.vb-demo-pdf-card .vb-file-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.08rem;
+  font-size: 0.68rem;
+}
+
+.vb-demo-pdf-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #2563eb;
+  font-size: 0.58rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+
+.vb-demo-pdf-send {
+  flex-shrink: 0;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid #93c5fd;
+  background: #fff;
+  color: #2563eb;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
   cursor: pointer;
 }
 
-.vb-pdf-send-btn:hover:not(:disabled) {
-  background: var(--vb-blue-deep);
+.vb-demo-pdf-send:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #60a5fa;
+  color: #1d4ed8;
 }
 
-.vb-pdf-send-btn:disabled {
+.vb-demo-pdf-send:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.vb-demo-pdf--compact .vb-demo-pdf-card {
+  gap: 0.4rem;
+  padding: 0.32rem 0.4rem 0.32rem 0.45rem;
+  border-radius: 8px;
+}
+
+.vb-demo-pdf--compact .vb-demo-pdf-card .vb-file-icon {
+  width: 28px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.vb-demo-pdf--compact .vb-demo-pdf-card .vb-file-icon-svg {
+  width: 16px;
+  height: 18px;
+}
+
+.vb-demo-pdf--compact .vb-demo-pdf-card .vb-file-name {
+  font-size: 0.72rem;
+}
+
+.vb-demo-pdf--compact .vb-demo-pdf-card .vb-file-meta {
+  font-size: 0.62rem;
+}
+
+.vb-demo-pdf--compact .vb-demo-pdf-send {
+  padding: 0.22rem 0.5rem;
+  font-size: 0.62rem;
 }
 
 /* legacy alias — prefer .vb-file-card in chat */
@@ -2116,18 +2201,6 @@ code {
   background: #f8fafc;
   border-color: #cbd5e1;
   color: var(--vb-text);
-}
-
-.vb-pdf-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: #dbeafe;
-  color: #2563eb;
-  display: grid;
-  place-items: center;
-  font-size: 0.7rem;
-  font-weight: 800;
 }
 
 .vb-chat-composer {
