@@ -14,14 +14,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Dual: wait until every track is terminal (so both Agent + Customer slots can render). */
-function isTerminalRecording(rec: RecordingResponse): boolean {
-  if (rec.mode === 'DUAL_PARTICIPANT' && rec.tracks && rec.tracks.length > 0) {
-    return rec.tracks.every((track) => TERMINAL_STATUSES.includes(track.status));
-  }
-  return TERMINAL_STATUSES.includes(rec.status);
-}
-
 export function useRecording() {
   const [recording, setRecording] = useState<RecordingResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +40,7 @@ export function useRecording() {
         try {
           const rec = await apiGet(recordingId);
           setRecordingBoth(rec);
-          if (isTerminalRecording(rec)) {
+          if (TERMINAL_STATUSES.includes(rec.status)) {
             stopPolling();
           }
         } catch {
@@ -62,20 +54,14 @@ export function useRecording() {
   const waitForTerminal = useCallback(
     async (recordingId: string, timeoutMs = WAIT_TIMEOUT_MS): Promise<RecordingResponse> => {
       const deadline = Date.now() + timeoutMs;
-      let last: RecordingResponse | null = null;
       while (Date.now() < deadline) {
         const rec = await apiGet(recordingId);
-        last = rec;
         setRecordingBoth(rec);
-        if (isTerminalRecording(rec)) {
+        if (TERMINAL_STATUSES.includes(rec.status)) {
           stopPolling();
           return rec;
         }
         await sleep(POLL_INTERVAL_MS);
-      }
-      if (last) {
-        stopPolling();
-        return last;
       }
       throw new Error('Hết thời gian chờ bản ghi tải lên.');
     },
@@ -124,7 +110,7 @@ export function useRecording() {
   const stopAndWait = useCallback(async (): Promise<RecordingResponse | null> => {
     const current = recordingRef.current;
     if (!current) return null;
-    if (isTerminalRecording(current)) {
+    if (TERMINAL_STATUSES.includes(current.status)) {
       return current;
     }
 
@@ -133,11 +119,11 @@ export function useRecording() {
     try {
       stopPolling();
       let rec = current;
-      if (!isTerminalRecording(current) && current.status !== 'STOPPING') {
+      if (!TERMINAL_STATUSES.includes(current.status) && current.status !== 'STOPPING') {
         rec = await apiStop(current.recordingId);
         setRecordingBoth(rec);
       }
-      if (isTerminalRecording(rec)) {
+      if (TERMINAL_STATUSES.includes(rec.status)) {
         return rec;
       }
       return await waitForTerminal(rec.recordingId);

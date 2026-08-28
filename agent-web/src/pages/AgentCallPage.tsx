@@ -7,7 +7,6 @@ import {
   getDocumentUrl,
   getMobileDisplay,
   getDocCollab,
-  getRecordingModeSetting,
   getRecordingSetting,
   getSession,
   issueToken,
@@ -15,7 +14,6 @@ import {
   type DocCollabResponse,
   type MobileDisplayResponse,
   type RecordingResponse,
-  type RecordingTrackResponse,
   type SessionResponse,
 } from '../api/virtualBranchApi';
 import {
@@ -32,8 +30,11 @@ import { useRecording } from '../recording/useRecording';
 import { ChatPanel } from '../chat/ChatPanel';
 import type { ChatMessage } from '../chat/types';
 import { findActiveCollabFromHistory } from '../chat/utils';
+import demoContractPdfUrl from '../docs/Hợp đồng (demo).pdf?url';
 
 const COLLAB_POLL_MS = 1000;
+const DEMO_PDF_NAME = 'Hợp đồng (demo).pdf';
+const DEMO_PDF_SIZE_BYTES = 179_631;
 
 type PostCallPhase = null | 'saving' | 'ready' | 'failed';
 
@@ -47,56 +48,6 @@ function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function sideLabel(side: string): string {
-  if (side === 'AGENT') return 'Agent';
-  if (side === 'CUSTOMER') return 'Khách hàng';
-  return 'Gộp (composite)';
-}
-
-/** Dual luôn có 2 slot Agent + KH; composite thì 1 file. */
-function buildPlaybackTracks(finalRecording: RecordingResponse | null): RecordingTrackResponse[] {
-  if (!finalRecording) return [];
-
-  if (finalRecording.mode === 'DUAL_PARTICIPANT') {
-    const bySide = new Map(
-      (finalRecording.tracks ?? []).map((track) => [track.side, track] as const),
-    );
-    return (['AGENT', 'CUSTOMER'] as const).map((side) => {
-      const existing = bySide.get(side);
-      if (existing) return existing;
-      return {
-        recordingId: `${finalRecording.recordingId}-${side.toLowerCase()}`,
-        side,
-        egressId: null,
-        status: 'FAILED',
-        objectKey: null,
-        playbackUrl: null,
-        errorMessage: 'Không có bản ghi phía này',
-      };
-    });
-  }
-
-  if (finalRecording.tracks?.length) {
-    return finalRecording.tracks;
-  }
-
-  if (finalRecording.playbackUrl || finalRecording.status === 'FAILED') {
-    return [
-      {
-        recordingId: finalRecording.recordingId,
-        side: 'COMPOSITE',
-        egressId: finalRecording.egressId,
-        status: finalRecording.status,
-        objectKey: finalRecording.objectKey,
-        playbackUrl: finalRecording.playbackUrl,
-        errorMessage: finalRecording.errorMessage,
-      },
-    ];
-  }
-
-  return [];
 }
 
 export function AgentCallPage() {
@@ -254,37 +205,15 @@ export function AgentCallPage() {
       .finally(() => setRecordingSettingLoaded(true));
   }, []);
 
-  // Auto-start recording when connected. Dual mode waits for KH in room first.
+  // Auto-start recording when connected (gated by DB setting recording.enabled)
   useEffect(() => {
     if (!recordingSettingLoaded || !recordingEnabled) return;
-    if (!sessionId || !isConnected || !room || autoRecordStartedRef.current || postCallPhase != null) {
-      return;
-    }
+    if (!sessionId || !isConnected || autoRecordStartedRef.current || postCallPhase != null) return;
     autoRecordStartedRef.current = true;
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const setting = await getRecordingModeSetting();
-        if (setting.mode === 'DUAL_PARTICIPANT') {
-          const deadline = Date.now() + 25_000;
-          while (!cancelled && Date.now() < deadline && room.remoteParticipants.size === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-          }
-        }
-        if (cancelled) return;
-        await startRecording(sessionId);
-      } catch {
-        if (!cancelled) {
-          autoRecordStartedRef.current = false;
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, isConnected, room, startRecording, postCallPhase, recordingEnabled, recordingSettingLoaded]);
+    void startRecording(sessionId).catch(() => {
+      autoRecordStartedRef.current = false;
+    });
+  }, [sessionId, isConnected, startRecording, postCallPhase, recordingEnabled, recordingSettingLoaded]);
 
   useEffect(() => {
     if (!sessionId || !isConnected) return;
@@ -422,14 +351,10 @@ export function AgentCallPage() {
       }
 
       setFinalRecording(finished);
-      const playbackTracks = buildPlaybackTracks(finished);
-      const hasPlayback = playbackTracks.some((track) => Boolean(track.playbackUrl));
-      if (finished?.status === 'COMPLETED' && hasPlayback) {
+      if (finished?.status === 'COMPLETED' && finished.playbackUrl) {
         setPostCallPhase('ready');
-      } else if (hasPlayback) {
-        setPostCallPhase('ready');
-      } else if (finished?.status === 'FAILED') {
-        setPostCallPhase('failed');
+      } else if (finished?.status === 'FAILED' || (finished && !finished.playbackUrl)) {
+        setPostCallPhase(finished?.status === 'COMPLETED' ? 'ready' : 'failed');
       } else {
         setPostCallPhase(finished ? 'ready' : 'failed');
       }
@@ -571,50 +496,20 @@ export function AgentCallPage() {
   }
 
   if (postCallPhase === 'ready' || postCallPhase === 'failed') {
-    const playbackTracks = buildPlaybackTracks(finalRecording);
-    const playableCount = playbackTracks.filter((track) => Boolean(track.playbackUrl)).length;
-    const isDual = finalRecording?.mode === 'DUAL_PARTICIPANT';
-
     return (
       <div className="vb-postcall">
-        <div
-          className={
-            isDual ? 'vb-postcall-card vb-postcall-card--wide vb-postcall-card--dual' : 'vb-postcall-card vb-postcall-card--wide'
-          }
-        >
+        <div className="vb-postcall-card vb-postcall-card--wide">
           <h2>{postCallPhase === 'ready' ? 'Cuộc gọi đã kết thúc' : 'Kết thúc cuộc gọi'}</h2>
-          {playbackTracks.length > 0 ? (
+          {finalRecording?.playbackUrl ? (
             <>
-              <p className="muted">
-                {isDual
-                  ? `Hai file tách riêng (${playableCount}/2 sẵn sàng).`
-                  : 'Xem lại bản ghi bên dưới.'}
-              </p>
-              <div className={isDual ? 'vb-playback-grid vb-playback-grid--dual' : 'vb-playback-grid'}>
-                {playbackTracks.map((track) => (
-                  <div key={track.recordingId} className="vb-playback-item">
-                    <strong>{sideLabel(track.side)}</strong>
-                    {track.playbackUrl ? (
-                      <video className="vb-playback" src={track.playbackUrl} controls playsInline />
-                    ) : (
-                      <div className="vb-playback-missing">
-                        <p className="muted">
-                          {track.errorMessage
-                            ?? (track.status === 'FAILED'
-                              ? 'Ghi phía này thất bại.'
-                              : 'Chưa có file xem lại.')}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <p className="muted">Xem lại bản ghi bên dưới.</p>
+              <video className="vb-playback" src={finalRecording.playbackUrl} controls playsInline />
             </>
           ) : (
             <p className="muted">
               {finalRecording?.status === 'FAILED'
                 ? finalRecording.errorMessage ?? 'Lưu bản ghi thất bại.'
-                : 'Không có URL xem lại (kiểm tra egress / storage local).'}
+                : 'Không có URL xem lại (kiểm tra egress / storage).'}
             </p>
           )}
           {error && <div className="error-banner">{error}</div>}
@@ -729,11 +624,17 @@ export function AgentCallPage() {
           role="AGENT"
           compact={docCollabActive}
           enabled={isConnected && postCallPhase == null}
+          demoPdf={{
+            fileName: DEMO_PDF_NAME,
+            sizeBytes: DEMO_PDF_SIZE_BYTES,
+            url: demoContractPdfUrl,
+            disabled: busy || !isConnected,
+          }}
           onCollabRequest={handleChatCollabRequest}
           onCollabStatus={handleChatCollabStatus}
           onError={(message) => setPageError(message)}
         />
-        {recordingBusy && isConnected && (
+        {recordingEnabled && recordingBusy && isConnected && (
           <p className="vb-upload-hint">Đang khởi tạo ghi hình…</p>
         )}
       </div>

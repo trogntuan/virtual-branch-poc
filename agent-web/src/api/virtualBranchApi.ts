@@ -23,16 +23,6 @@ export interface TokenResponse {
   participantToken: string;
 }
 
-export interface RecordingTrackResponse {
-  recordingId: string;
-  side: string;
-  egressId: string | null;
-  status: string;
-  objectKey: string | null;
-  playbackUrl: string | null;
-  errorMessage: string | null;
-}
-
 export interface RecordingResponse {
   recordingId: string;
   sessionId: string;
@@ -41,15 +31,6 @@ export interface RecordingResponse {
   objectKey: string | null;
   playbackUrl: string | null;
   errorMessage: string | null;
-  mode?: string | null;
-  groupId?: string | null;
-  tracks?: RecordingTrackResponse[] | null;
-}
-
-export type RecordingMode = 'ROOM_COMPOSITE' | 'DUAL_PARTICIPANT';
-
-export interface RecordingModeSettingResponse {
-  mode: RecordingMode | string;
 }
 
 export interface DocumentResponse {
@@ -285,19 +266,6 @@ export async function setRecordingSetting(enabled: boolean): Promise<RecordingSe
   return request<RecordingSettingResponse>('/api/v1/settings/recording', {
     method: 'PUT',
     body: JSON.stringify({ enabled }),
-  });
-}
-
-export async function getRecordingModeSetting(): Promise<RecordingModeSettingResponse> {
-  return request<RecordingModeSettingResponse>('/api/v1/settings/recording-mode');
-}
-
-export async function setRecordingModeSetting(
-  mode: RecordingMode,
-): Promise<RecordingModeSettingResponse> {
-  return request<RecordingModeSettingResponse>('/api/v1/settings/recording-mode', {
-    method: 'PUT',
-    body: JSON.stringify({ mode }),
   });
 }
 

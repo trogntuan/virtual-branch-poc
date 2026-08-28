@@ -12,7 +12,6 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
         StorageProperties.class,
         EgressStorageProperties.class,
         CorsProperties.class,
-        RecordingProperties.class,
         ChatProperties.class
 })
 public class WebConfig implements WebMvcConfigurer {

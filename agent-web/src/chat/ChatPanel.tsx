@@ -22,6 +22,12 @@ export interface ChatPanelProps {
   role: ChatSenderRole;
   enabled?: boolean;
   compact?: boolean;
+  demoPdf?: {
+    fileName: string;
+    sizeBytes: number;
+    url: string;
+    disabled?: boolean;
+  };
   onCollabRequest?: (message: ChatMessage) => void;
   onCollabStatus?: (message: ChatMessage) => void;
   onError?: (message: string) => void;
@@ -481,6 +487,7 @@ export function ChatPanel({
   role,
   enabled = true,
   compact = false,
+  demoPdf,
   onCollabRequest,
   onCollabStatus,
   onError,
@@ -491,6 +498,7 @@ export function ChatPanel({
   const [draft, setDraft] = useState('');
   const [uploadBusy, setUploadBusy] = useState(false);
   const [collabBusy, setCollabBusy] = useState(false);
+  const [demoPdfBusy, setDemoPdfBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const {
@@ -585,8 +593,30 @@ export function ChatPanel({
     }
   }
 
+  async function handleSendDemoPdf() {
+    if (!sessionId || !demoPdf) return;
+    setDemoPdfBusy(true);
+    setLocalError(null);
+    try {
+      const response = await fetch(demoPdf.url);
+      if (!response.ok) {
+        throw new Error('Không tải được file PDF mẫu.');
+      }
+      const blob = await response.blob();
+      const file = new File([blob], demoPdf.fileName, { type: 'application/pdf' });
+      const uploaded = await uploadDocument(sessionId, file);
+      await sendFileMessage(uploaded.documentId);
+    } catch (cause) {
+      setLocalError(cause instanceof Error ? cause.message : 'Không gửi được PDF mẫu.');
+      onError?.(cause instanceof Error ? cause.message : 'Không gửi được PDF mẫu.');
+    } finally {
+      setDemoPdfBusy(false);
+    }
+  }
+
   const accept = settings ? buildFileAccept(settings) : undefined;
   const chatDisabled = !enabled || connectionState !== 'connected';
+  const demoBusy = demoPdfBusy || uploadBusy;
   const latestCollabStatusById = useMemo(
     () => buildLatestCollabStatusMap(messages),
     [messages],
@@ -595,7 +625,30 @@ export function ChatPanel({
   return (
     <aside className={`vb-chat-panel ${compact ? 'vb-chat-panel--compact' : ''}`}>
       <div className="vb-chat-scroll" ref={scrollRef}>
-        {messages.length === 0 && (
+        {demoPdf && role === 'AGENT' && (
+          <div className="vb-pdf-message">
+            <div className="vb-pdf-bubble vb-pdf-bubble--demo">
+              <div className="vb-pdf-icon">PDF</div>
+              <div className="vb-pdf-bubble-body">
+                <strong>{demoPdf.fileName}</strong>
+                <p className="muted">
+                  {formatBytes(demoPdf.sizeBytes)} · Mẫu sẵn
+                </p>
+              </div>
+              <button
+                type="button"
+                className="vb-pdf-send-btn"
+                onClick={() => void handleSendDemoPdf()}
+                disabled={demoBusy || demoPdf.disabled || chatDisabled}
+                title="Gửi PDF mẫu qua chat"
+              >
+                {demoPdfBusy ? 'Đang gửi…' : 'Gửi'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {messages.length === 0 && !demoPdf && (
           <div className="vb-chat-empty">
             <p>Chưa có tin nhắn.</p>
             <p className="muted">Gửi tin nhắn hoặc đính kèm file PDF, DOC, Excel, ảnh.</p>
