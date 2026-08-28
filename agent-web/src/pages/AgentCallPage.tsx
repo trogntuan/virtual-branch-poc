@@ -3,17 +3,19 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   endSession,
   endDocCollab,
+  getChatHistory,
+  getDocumentUrl,
   getMobileDisplay,
   getDocCollab,
+  getRecordingModeSetting,
   getRecordingSetting,
   getSession,
   issueToken,
-  startDocCollab,
-  uploadDocument,
   type DocumentResponse,
   type DocCollabResponse,
   type MobileDisplayResponse,
   type RecordingResponse,
+  type RecordingTrackResponse,
   type SessionResponse,
 } from '../api/virtualBranchApi';
 import {
@@ -27,12 +29,11 @@ import { useDocCollab } from '../collab/useDocCollab';
 import { useLiveKitRoom } from '../livekit/useLiveKitRoom';
 import { useAgentChrome } from '../layout/AgentChromeContext';
 import { useRecording } from '../recording/useRecording';
-import { collabStatusLabel } from '../i18n/labels';
-import demoContractPdfUrl from '../docs/Hợp đồng (demo).pdf?url';
+import { ChatPanel } from '../chat/ChatPanel';
+import type { ChatMessage } from '../chat/types';
+import { findActiveCollabFromHistory } from '../chat/utils';
 
 const COLLAB_POLL_MS = 1000;
-const DEMO_PDF_NAME = 'Hợp đồng (demo).pdf';
-const DEMO_PDF_SIZE_BYTES = 179_631;
 
 type PostCallPhase = null | 'saving' | 'ready' | 'failed';
 
@@ -48,6 +49,56 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function sideLabel(side: string): string {
+  if (side === 'AGENT') return 'Agent';
+  if (side === 'CUSTOMER') return 'Khách hàng';
+  return 'Gộp (composite)';
+}
+
+/** Dual luôn có 2 slot Agent + KH; composite thì 1 file. */
+function buildPlaybackTracks(finalRecording: RecordingResponse | null): RecordingTrackResponse[] {
+  if (!finalRecording) return [];
+
+  if (finalRecording.mode === 'DUAL_PARTICIPANT') {
+    const bySide = new Map(
+      (finalRecording.tracks ?? []).map((track) => [track.side, track] as const),
+    );
+    return (['AGENT', 'CUSTOMER'] as const).map((side) => {
+      const existing = bySide.get(side);
+      if (existing) return existing;
+      return {
+        recordingId: `${finalRecording.recordingId}-${side.toLowerCase()}`,
+        side,
+        egressId: null,
+        status: 'FAILED',
+        objectKey: null,
+        playbackUrl: null,
+        errorMessage: 'Không có bản ghi phía này',
+      };
+    });
+  }
+
+  if (finalRecording.tracks?.length) {
+    return finalRecording.tracks;
+  }
+
+  if (finalRecording.playbackUrl || finalRecording.status === 'FAILED') {
+    return [
+      {
+        recordingId: finalRecording.recordingId,
+        side: 'COMPOSITE',
+        egressId: finalRecording.egressId,
+        status: finalRecording.status,
+        objectKey: finalRecording.objectKey,
+        playbackUrl: finalRecording.playbackUrl,
+        errorMessage: finalRecording.errorMessage,
+      },
+    ];
+  }
+
+  return [];
+}
+
 export function AgentCallPage() {
   const { sessionId: routeSessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
@@ -58,7 +109,6 @@ export function AgentCallPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [document, setDocument] = useState<DocumentResponse | null>(null);
-  const [uploadBusy, setUploadBusy] = useState(false);
   const [collab, setCollab] = useState<DocCollabResponse | null>(null);
   const [collabBusy, setCollabBusy] = useState(false);
   const [mobileDisplay, setMobileDisplay] = useState<MobileDisplayResponse | null>(null);
@@ -68,11 +118,10 @@ export function AgentCallPage() {
   const [recordingEnabled, setRecordingEnabled] = useState(false);
   const [recordingSettingLoaded, setRecordingSettingLoaded] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectAttemptedRef = useRef(false);
   const autoRecordStartedRef = useRef(false);
-  const collabRequestInFlightRef = useRef(false);
+  const collabRestoredRef = useRef(false);
 
   const {
     connect,
@@ -110,7 +159,6 @@ export function AgentCallPage() {
     room,
     role: 'AGENT',
     sessionId,
-    destinationIdentity: session?.customerIdentity ?? null,
   });
 
   const isConnected = connectionState === 'CONNECTED' || connectionState === 'RECONNECTING';
@@ -129,26 +177,6 @@ export function AgentCallPage() {
       setHeaderExtra(null);
     };
   }, [setPageTitle, setRecordingState, setHeaderExtra]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getRecordingSetting()
-      .then((setting) => {
-        if (!cancelled) {
-          setRecordingEnabled(setting.enabled);
-          setRecordingSettingLoaded(true);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRecordingEnabled(false);
-          setRecordingSettingLoaded(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (postCallPhase === 'saving') {
@@ -219,15 +247,44 @@ export function AgentCallPage() {
     };
   }, [sessionId, navigate, connectToRoom, disconnect]);
 
-  // Auto-start recording when connected (gated by DB setting recording.enabled)
+  useEffect(() => {
+    void getRecordingSetting()
+      .then((setting) => setRecordingEnabled(setting.enabled))
+      .catch(() => setRecordingEnabled(false))
+      .finally(() => setRecordingSettingLoaded(true));
+  }, []);
+
+  // Auto-start recording when connected. Dual mode waits for KH in room first.
   useEffect(() => {
     if (!recordingSettingLoaded || !recordingEnabled) return;
-    if (!sessionId || !isConnected || autoRecordStartedRef.current || postCallPhase != null) return;
+    if (!sessionId || !isConnected || !room || autoRecordStartedRef.current || postCallPhase != null) {
+      return;
+    }
     autoRecordStartedRef.current = true;
-    void startRecording(sessionId).catch(() => {
-      autoRecordStartedRef.current = false;
-    });
-  }, [sessionId, isConnected, startRecording, postCallPhase, recordingEnabled, recordingSettingLoaded]);
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const setting = await getRecordingModeSetting();
+        if (setting.mode === 'DUAL_PARTICIPANT') {
+          const deadline = Date.now() + 25_000;
+          while (!cancelled && Date.now() < deadline && room.remoteParticipants.size === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        }
+        if (cancelled) return;
+        await startRecording(sessionId);
+      } catch {
+        if (!cancelled) {
+          autoRecordStartedRef.current = false;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, isConnected, room, startRecording, postCallPhase, recordingEnabled, recordingSettingLoaded]);
 
   useEffect(() => {
     if (!sessionId || !isConnected) return;
@@ -242,6 +299,45 @@ export function AgentCallPage() {
   }, [sessionId, isConnected]);
 
   useEffect(() => {
+    collabRestoredRef.current = false;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !isConnected || collabRestoredRef.current || postCallPhase != null) return;
+
+    void (async () => {
+      try {
+        const history = await getChatHistory(sessionId);
+        const active = findActiveCollabFromHistory(history.messages);
+        if (!active) return;
+
+        const status = await getDocCollab(active.collabId);
+        if (status.status !== 'ACTIVE') return;
+
+        const docUrl = await getDocumentUrl(active.document.documentId);
+        setCollab({
+          collabId: active.collabId,
+          sessionId,
+          documentId: active.document.documentId,
+          status: 'ACTIVE',
+          consentDecision: 'ACCEPT',
+        });
+        setDocument({
+          documentId: active.document.documentId,
+          fileName: active.document.fileName,
+          contentType: active.document.contentType,
+          size: active.document.sizeBytes,
+          readUrl: docUrl.readUrl,
+        });
+        collabRestoredRef.current = true;
+        await sendDocState(active.collabId, active.document.documentId, viewState);
+      } catch {
+        // ignore restore errors
+      }
+    })();
+  }, [sessionId, isConnected, postCallPhase, sendDocState, viewState]);
+
+  useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -254,12 +350,20 @@ export function AgentCallPage() {
     }
   }
 
-  function startCollabPolling(collabId: string, documentId: string) {
+  function startCollabPolling(collabId: string, documentId: string, fileName: string) {
     stopCollabPolling();
+    let resendTick = 0;
     pollRef.current = setInterval(async () => {
       try {
         const status = await getDocCollab(collabId);
         setCollab(status);
+        if (status.status === 'REQUESTED') {
+          resendTick += 1;
+          // Re-broadcast every ~2s while waiting so mobile still receives if first packet was missed.
+          if (resendTick % 2 === 1) {
+            await sendCollabRequest(collabId, documentId, fileName);
+          }
+        }
         if (status.status === 'ACTIVE') {
           stopCollabPolling();
           await sendDocState(collabId, documentId, viewState);
@@ -318,10 +422,14 @@ export function AgentCallPage() {
       }
 
       setFinalRecording(finished);
-      if (finished?.status === 'COMPLETED' && finished.playbackUrl) {
+      const playbackTracks = buildPlaybackTracks(finished);
+      const hasPlayback = playbackTracks.some((track) => Boolean(track.playbackUrl));
+      if (finished?.status === 'COMPLETED' && hasPlayback) {
         setPostCallPhase('ready');
-      } else if (finished?.status === 'FAILED' || (finished && !finished.playbackUrl)) {
-        setPostCallPhase(finished?.status === 'COMPLETED' ? 'ready' : 'failed');
+      } else if (hasPlayback) {
+        setPostCallPhase('ready');
+      } else if (finished?.status === 'FAILED') {
+        setPostCallPhase('failed');
       } else {
         setPostCallPhase(finished ? 'ready' : 'failed');
       }
@@ -339,64 +447,6 @@ export function AgentCallPage() {
     }
   }
 
-  async function handleUploadPdf(file: File) {
-    if (!sessionId) return;
-    setUploadBusy(true);
-    setPageError(null);
-    try {
-      const uploaded = await uploadDocument(sessionId, file);
-      setDocument(uploaded);
-      setCollab(null);
-    } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : 'Không tải lên được PDF.');
-    } finally {
-      setUploadBusy(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }
-
-  async function handleSendDemoPdf() {
-    if (!sessionId || !isConnected || uploadBusy || busy || document) return;
-    setUploadBusy(true);
-    setPageError(null);
-    try {
-      const response = await fetch(demoContractPdfUrl);
-      if (!response.ok) {
-        throw new Error('Không tải được file PDF mẫu.');
-      }
-      const blob = await response.blob();
-      const file = new File([blob], DEMO_PDF_NAME, { type: 'application/pdf' });
-      const uploaded = await uploadDocument(sessionId, file);
-      setDocument(uploaded);
-      setCollab(null);
-    } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : 'Không gửi được PDF mẫu.');
-    } finally {
-      setUploadBusy(false);
-    }
-  }
-
-  async function handleRequestCollab() {
-    if (!sessionId || !document) return;
-    if (collabRequestInFlightRef.current || collabBusy) return;
-    if (collab && (collab.status === 'REQUESTED' || collab.status === 'ACTIVE')) return;
-
-    collabRequestInFlightRef.current = true;
-    setCollabBusy(true);
-    setPageError(null);
-    try {
-      const started = await startDocCollab(sessionId, document.documentId);
-      setCollab(started);
-      await sendCollabRequest(started.collabId, document.documentId, document.fileName);
-      startCollabPolling(started.collabId, document.documentId);
-    } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : 'Không bắt đầu được chia sẻ tài liệu.');
-    } finally {
-      collabRequestInFlightRef.current = false;
-      setCollabBusy(false);
-    }
-  }
-
   async function handleEndCollab() {
     if (!collab || !document) return;
     setCollabBusy(true);
@@ -405,12 +455,103 @@ export function AgentCallPage() {
       await sendCollabEnd(collab.collabId, document.documentId);
       stopCollabPolling();
       setCollab(null);
+      setDocument(null);
     } catch (cause) {
       setPageError(cause instanceof Error ? cause.message : 'Không kết thúc được chia sẻ tài liệu.');
     } finally {
       setCollabBusy(false);
     }
   }
+
+  const handleChatCollabRequest = useCallback(
+    (message: ChatMessage) => {
+      if (message.senderIdentity !== getAgentIdentity()) return;
+      const collabInfo = message.collab;
+      const docInfo = message.document;
+      if (!sessionId || !collabInfo || !docInfo) return;
+
+      setCollab({
+        collabId: collabInfo.collabId,
+        sessionId,
+        documentId: collabInfo.documentId,
+        status: 'REQUESTED',
+        consentDecision: null,
+      });
+
+      void (async () => {
+        try {
+          await sendCollabRequest(collabInfo.collabId, collabInfo.documentId, docInfo.fileName);
+          await sendCollabRequest(collabInfo.collabId, collabInfo.documentId, docInfo.fileName);
+          startCollabPolling(collabInfo.collabId, collabInfo.documentId, docInfo.fileName);
+        } catch (cause) {
+          setPageError(
+            cause instanceof Error ? cause.message : 'Không gửi được sự kiện Doc Collab.',
+          );
+        }
+      })();
+    },
+    [sessionId, sendCollabRequest],
+  );
+
+  const handleChatCollabStatus = useCallback(
+    (message: ChatMessage) => {
+      const collabInfo = message.collab;
+      const docInfo = message.document;
+      if (!sessionId || !collabInfo) return;
+
+      setCollab({
+        collabId: collabInfo.collabId,
+        sessionId,
+        documentId: collabInfo.documentId,
+        status: collabInfo.status,
+        consentDecision:
+          collabInfo.status === 'ACTIVE'
+            ? 'ACCEPT'
+            : collabInfo.status === 'REJECTED'
+              ? 'REJECT'
+              : null,
+      });
+
+      if (collabInfo.status === 'ACTIVE' && docInfo) {
+        void (async () => {
+          try {
+            const docUrl = await getDocumentUrl(docInfo.documentId);
+            setDocument({
+              documentId: docInfo.documentId,
+              fileName: docInfo.fileName,
+              contentType: docInfo.contentType,
+              size: docInfo.sizeBytes,
+              readUrl: docUrl.readUrl,
+            });
+            stopCollabPolling();
+            await sendDocState(collabInfo.collabId, docInfo.documentId, viewState);
+          } catch (cause) {
+            setPageError(
+              cause instanceof Error ? cause.message : 'Không tải được tài liệu chia sẻ.',
+            );
+          }
+        })();
+      }
+
+      if (collabInfo.status === 'REJECTED' || collabInfo.status === 'ENDED') {
+        stopCollabPolling();
+        if (collabInfo.status === 'ENDED') {
+          const endedDocumentId = docInfo?.documentId ?? collabInfo.documentId;
+          void (async () => {
+            if (endedDocumentId) {
+              try {
+                await sendCollabEnd(collabInfo.collabId, endedDocumentId);
+              } catch {
+                // ignore livekit cleanup errors
+              }
+            }
+            setDocument(null);
+          })();
+        }
+      }
+    },
+    [sessionId, sendDocState, sendCollabEnd, viewState],
+  );
 
   function goBackToQueue() {
     resetRecording();
@@ -430,19 +571,44 @@ export function AgentCallPage() {
   }
 
   if (postCallPhase === 'ready' || postCallPhase === 'failed') {
+    const playbackTracks = buildPlaybackTracks(finalRecording);
+    const playableCount = playbackTracks.filter((track) => Boolean(track.playbackUrl)).length;
+    const isDual = finalRecording?.mode === 'DUAL_PARTICIPANT';
+
     return (
       <div className="vb-postcall">
-        <div className="vb-postcall-card vb-postcall-card--wide">
+        <div
+          className={
+            isDual ? 'vb-postcall-card vb-postcall-card--wide vb-postcall-card--dual' : 'vb-postcall-card vb-postcall-card--wide'
+          }
+        >
           <h2>{postCallPhase === 'ready' ? 'Cuộc gọi đã kết thúc' : 'Kết thúc cuộc gọi'}</h2>
-          {finalRecording?.playbackUrl ? (
+          {playbackTracks.length > 0 ? (
             <>
-              <p className="muted">Xem lại bản ghi bên dưới.</p>
-              <video
-                className="vb-playback"
-                src={finalRecording.playbackUrl}
-                controls
-                playsInline
-              />
+              <p className="muted">
+                {isDual
+                  ? `Hai file tách riêng (${playableCount}/2 sẵn sàng).`
+                  : 'Xem lại bản ghi bên dưới.'}
+              </p>
+              <div className={isDual ? 'vb-playback-grid vb-playback-grid--dual' : 'vb-playback-grid'}>
+                {playbackTracks.map((track) => (
+                  <div key={track.recordingId} className="vb-playback-item">
+                    <strong>{sideLabel(track.side)}</strong>
+                    {track.playbackUrl ? (
+                      <video className="vb-playback" src={track.playbackUrl} controls playsInline />
+                    ) : (
+                      <div className="vb-playback-missing">
+                        <p className="muted">
+                          {track.errorMessage
+                            ?? (track.status === 'FAILED'
+                              ? 'Ghi phía này thất bại.'
+                              : 'Chưa có file xem lại.')}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </>
           ) : (
             <p className="muted">
@@ -556,119 +722,20 @@ export function AgentCallPage() {
           </section>
         )}
 
-        <aside className="vb-chat-panel">
-          <div className="vb-chat-scroll">
-            <div className="vb-pdf-message">
-              <div className="vb-pdf-bubble vb-pdf-bubble--demo">
-                <div className="vb-pdf-icon">PDF</div>
-                <div className="vb-pdf-bubble-body">
-                  <strong>{DEMO_PDF_NAME}</strong>
-                  <p className="muted">{formatBytes(DEMO_PDF_SIZE_BYTES)} · Mẫu sẵn</p>
-                </div>
-                <button
-                  type="button"
-                  className="vb-pdf-send-btn"
-                  onClick={() => void handleSendDemoPdf()}
-                  disabled={uploadBusy || busy || !isConnected || Boolean(document)}
-                  title={
-                    document
-                      ? 'Đã gửi file — dùng Yêu cầu xem cùng bên dưới'
-                      : 'Gửi PDF mẫu (upload + collab như thường)'
-                  }
-                >
-                  {uploadBusy && !document ? 'Đang gửi…' : 'Gửi'}
-                </button>
-              </div>
-            </div>
-
-            {!document && (
-              <div className="vb-chat-empty">
-                <p>Ấn Gửi trên file mẫu, hoặc đính kèm PDF khác bên dưới.</p>
-              </div>
-            )}
-
-            {document && (
-              <div className="vb-pdf-message">
-                <div className="vb-pdf-bubble">
-                  <div className="vb-pdf-icon">PDF</div>
-                  <div>
-                    <strong>{document.fileName}</strong>
-                    <p className="muted">{formatBytes(document.size)}</p>
-                  </div>
-                </div>
-                {!collab && (
-                  <button
-                    type="button"
-                    className="vb-collab-request-btn"
-                    onClick={() => void handleRequestCollab()}
-                    disabled={collabBusy || !isConnected}
-                  >
-                    {collabBusy ? 'Đang gửi…' : 'Yêu cầu xem cùng'}
-                  </button>
-                )}
-                {collab &&
-                  collab.status !== 'ENDED' &&
-                  collab.status !== 'REJECTED' &&
-                  collab.status !== 'ACTIVE' && (
-                    <button
-                      type="button"
-                      className="vb-collab-request-btn vb-collab-request-btn--muted"
-                      onClick={() => void handleEndCollab()}
-                      disabled={collabBusy}
-                    >
-                      Hủy yêu cầu
-                    </button>
-                  )}
-              </div>
-            )}
-
-            {collab && !docCollabActive && (
-              <div className="vb-collab-card">
-                <strong>Phiên Document Collab</strong>
-                <p>
-                  {collab.status === 'REQUESTED'
-                    ? 'Đã gửi yêu cầu Collab — Chờ KH xác nhận'
-                    : collabStatusLabel(collab.status)}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="vb-chat-composer">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              hidden
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void handleUploadPdf(file);
-              }}
-            />
-            <button
-              type="button"
-              className="vb-attach-btn"
-              title="Tải lên PDF"
-              disabled={uploadBusy || busy || !isConnected}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              📎
-            </button>
-            <input
-              type="text"
-              placeholder="Chỉ hỗ trợ upload PDF…"
-              disabled
-              readOnly
-            />
-            <button type="button" className="vb-send-btn" disabled title="Không dùng chat">
-              ➤
-            </button>
-          </div>
-          {uploadBusy && <p className="vb-upload-hint">Đang tải PDF lên…</p>}
-          {recordingEnabled && recordingBusy && isConnected && (
-            <p className="vb-upload-hint">Đang khởi tạo ghi hình…</p>
-          )}
-        </aside>
+        <ChatPanel
+          sessionId={sessionId}
+          identity={getAgentIdentity()}
+          name={getAgentDisplayName()}
+          role="AGENT"
+          compact={docCollabActive}
+          enabled={isConnected && postCallPhase == null}
+          onCollabRequest={handleChatCollabRequest}
+          onCollabStatus={handleChatCollabStatus}
+          onError={(message) => setPageError(message)}
+        />
+        {recordingBusy && isConnected && (
+          <p className="vb-upload-hint">Đang khởi tạo ghi hình…</p>
+        )}
       </div>
 
       {error && <div className="error-banner">{error}</div>}

@@ -1,6 +1,8 @@
 package com.example.virtualbranch.settings;
 
+import com.example.virtualbranch.settings.dto.RecordingModeSettingResponse;
 import com.example.virtualbranch.settings.dto.RecordingSettingResponse;
+import com.example.virtualbranch.settings.dto.UpdateRecordingModeSettingRequest;
 import com.example.virtualbranch.settings.dto.UpdateRecordingSettingRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,5 +31,17 @@ public class SettingsController {
             @Valid @RequestBody UpdateRecordingSettingRequest request
     ) {
         return appSettingService.setRecordingEnabled(Boolean.TRUE.equals(request.enabled()));
+    }
+
+    @GetMapping("/recording-mode")
+    public RecordingModeSettingResponse getRecordingMode() {
+        return appSettingService.getRecordingModeSetting();
+    }
+
+    @PutMapping("/recording-mode")
+    public RecordingModeSettingResponse updateRecordingMode(
+            @Valid @RequestBody UpdateRecordingModeSettingRequest request
+    ) {
+        return appSettingService.setRecordingMode(request.mode());
     }
 }

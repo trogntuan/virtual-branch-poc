@@ -39,4 +39,9 @@ public class CallController {
     ) {
         return sessionService.acceptCall(sessionId, request);
     }
+
+    @PostMapping("/{sessionId}/skip")
+    public SessionResponse skipCall(@PathVariable String sessionId) {
+        return sessionService.skipCall(sessionId);
+    }
 }

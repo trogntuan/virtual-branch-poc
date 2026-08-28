@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { getRecordingSetting, setRecordingSetting } from '../api/virtualBranchApi';
+import {
+  getRecordingModeSetting,
+  getRecordingSetting,
+  setRecordingModeSetting,
+  setRecordingSetting,
+  type RecordingMode,
+} from '../api/virtualBranchApi';
 import { AGENT_WEB_BUILD } from '../buildId';
 import { AgentChromeProvider, useAgentChrome } from './AgentChromeContext';
 
@@ -11,19 +17,27 @@ function AgentShellInner() {
   const onQueue = location.pathname === '/agent' || location.pathname === '/agent/';
   const [recordingEnabled, setRecordingEnabled] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
+  const [recordingMode, setRecordingMode] = useState<RecordingMode>('ROOM_COMPOSITE');
+  const [modeBusy, setModeBusy] = useState(false);
 
-  const refreshRecordingSetting = useCallback(async () => {
+  const refreshSettings = useCallback(async () => {
     try {
-      const setting = await getRecordingSetting();
-      setRecordingEnabled(setting.enabled);
+      const [recording, mode] = await Promise.all([
+        getRecordingSetting(),
+        getRecordingModeSetting(),
+      ]);
+      setRecordingEnabled(recording.enabled);
+      if (mode.mode === 'DUAL_PARTICIPANT' || mode.mode === 'ROOM_COMPOSITE') {
+        setRecordingMode(mode.mode);
+      }
     } catch {
-      // keep previous value
+      // keep previous values
     }
   }, []);
 
   useEffect(() => {
-    void refreshRecordingSetting();
-  }, [refreshRecordingSetting]);
+    void refreshSettings();
+  }, [refreshSettings]);
 
   async function handleToggleRecording() {
     const next = !recordingEnabled;
@@ -32,9 +46,24 @@ function AgentShellInner() {
       const updated = await setRecordingSetting(next);
       setRecordingEnabled(updated.enabled);
     } catch {
-      await refreshRecordingSetting();
+      await refreshSettings();
     } finally {
       setRecordingBusy(false);
+    }
+  }
+
+  async function handleModeChange(mode: RecordingMode) {
+    if (mode === recordingMode || modeBusy || onCall) return;
+    setModeBusy(true);
+    try {
+      const updated = await setRecordingModeSetting(mode);
+      if (updated.mode === 'DUAL_PARTICIPANT' || updated.mode === 'ROOM_COMPOSITE') {
+        setRecordingMode(updated.mode);
+      }
+    } catch {
+      await refreshSettings();
+    } finally {
+      setModeBusy(false);
     }
   }
 
@@ -83,11 +112,50 @@ function AgentShellInner() {
               {recordingBusy ? '…' : recordingEnabled ? 'Bật' : 'Tắt'}
             </span>
           </button>
-          <Link to="/customer-test" className="vb-nav-item vb-nav-item--muted">
+          <div className="vb-rec-mode" title="Lưu trong DB — không cần redeploy">
+            <span className="vb-rec-mode-title">Rec</span>
+            <button
+              type="button"
+              className={
+                recordingMode === 'ROOM_COMPOSITE'
+                  ? 'vb-rec-mode-btn vb-rec-mode-btn--on'
+                  : 'vb-rec-mode-btn'
+              }
+              disabled={modeBusy || onCall}
+              onClick={() => void handleModeChange('ROOM_COMPOSITE')}
+              title="RoomComposite — gộp 2 phía thành 1 video"
+            >
+              Gộp
+            </button>
+            <button
+              type="button"
+              className={
+                recordingMode === 'DUAL_PARTICIPANT'
+                  ? 'vb-rec-mode-btn vb-rec-mode-btn--on'
+                  : 'vb-rec-mode-btn'
+              }
+              disabled={modeBusy || onCall}
+              onClick={() => void handleModeChange('DUAL_PARTICIPANT')}
+              title="Participant — mỗi phía 1 video, không gộp"
+            >
+              Tách
+            </button>
+          </div>
+          <Link
+            to="/infra-load-test"
+            className="vb-nav-item vb-nav-item--muted"
+            title="Đo lường hạ tầng"
+          >
+            <span className="vb-nav-icon" aria-hidden>
+              ▣
+            </span>
+            <span className="vb-nav-label">Đo HT</span>
+          </Link>
+          <Link to="/customer-test" className="vb-nav-item vb-nav-item--muted" title="Mobile Test">
             <span className="vb-nav-icon" aria-hidden>
               ▤
             </span>
-            <span className="vb-nav-label">Mobile Test</span>
+            <span className="vb-nav-label">Mobile</span>
           </Link>
           <span className="vb-build-id" title={AGENT_WEB_BUILD}>
             {AGENT_WEB_BUILD}
@@ -97,47 +165,22 @@ function AgentShellInner() {
 
       <div className="vb-main">
         <header className="vb-header">
-          <div className="vb-header-left">
-            <h1 className="vb-header-title">{pageTitle}</h1>
-            {recordingState === 'recording' && (
-              <span className="vb-rec-badge" title="Đang ghi hình">
-                <span className="vb-rec-dot" />
-                REC
-              </span>
-            )}
-            {recordingState === 'uploading' && (
-              <span className="vb-rec-badge vb-rec-badge--upload" title="Đang lưu bản ghi">
-                <span className="vb-rec-spinner" />
-                Đang lưu…
-              </span>
-            )}
-          </div>
+          <h1 className="vb-header-title">{pageTitle}</h1>
           <div className="vb-header-search">
-            <span className="vb-search-icon" aria-hidden>
-              ⌕
-            </span>
-            <input type="search" placeholder="Tìm kiếm" aria-label="Tìm kiếm" disabled />
+            <input type="search" placeholder="Tìm kiếm…" disabled />
           </div>
-          <div className="vb-header-right">
+          <div className="vb-header-actions">
             {headerExtra}
-            <button type="button" className="vb-icon-btn" aria-label="Thông báo" disabled>
-              <span aria-hidden>🔔</span>
-              <span className="vb-badge-count">3</span>
-            </button>
-            <div className="vb-agent-chip">
-              <span className="vb-agent-avatar">T</span>
-              <div className="vb-agent-meta">
-                <strong>TuanNT10</strong>
-                <span className="vb-agent-status">
-                  <i className="vb-online-dot" /> Đang trực
-                </span>
-              </div>
-            </div>
+            {recordingState !== 'idle' && (
+              <span className={`vb-recording-pill vb-recording-pill--${recordingState}`}>
+                {recordingState === 'recording' ? '● REC' : recordingState}
+              </span>
+            )}
           </div>
         </header>
-        <div className="vb-content">
+        <main className="vb-content">
           <Outlet />
-        </div>
+        </main>
       </div>
     </div>
   );

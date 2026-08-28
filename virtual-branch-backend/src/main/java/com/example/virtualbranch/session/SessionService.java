@@ -98,6 +98,21 @@ public class SessionService {
         return toResponse(session);
     }
 
+    @Transactional
+    public SessionResponse skipCall(String sessionId) {
+        SessionEntity session = requireSession(sessionId);
+        if (session.getStatus() == SessionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.SESSION_ENDED);
+        }
+        if (session.getStatus() != SessionStatus.WAITING) {
+            throw new BusinessException(ErrorCode.CALL_NOT_WAITING);
+        }
+
+        session.end(OffsetDateTime.now());
+        log.info("Call skipped by agent sessionId={}", sessionId);
+        return toResponse(session);
+    }
+
     @Transactional(readOnly = true)
     public SessionResponse getSession(String sessionId) {
         return toResponse(requireOpenSession(sessionId));

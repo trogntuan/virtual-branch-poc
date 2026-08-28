@@ -19,3 +19,14 @@ storage:
     endpoint: http://minio:9000
     bucket: virtual-branch
     force_path_style: true
+
+# Admission control for concurrent RoomComposite jobs.
+# Default cost is 4.0 → only ~2 jobs on a 10-CPU Docker Desktop host.
+# ~1.8 allows up to ~5 concurrent RoomComposite on ~10 CPU @ 95% util.
+cpu_cost:
+  max_cpu_utilization: 0.95
+  room_composite_cpu_cost: 1.8
+  web_cpu_cost: 1.8
+  participant_cpu_cost: 1.5
+  track_composite_cpu_cost: 1.0
+  track_cpu_cost: 0.5

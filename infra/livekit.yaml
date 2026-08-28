@@ -1,11 +1,15 @@
 port: 7880
 
+# Prometheus scrape for SFU sizing (http://localhost:6789/metrics)
+prometheus:
+  port: 6789
+
 log_level: debug
 
 rtc:
   tcp_port: 7881
-  # UDP mux: single port range (easier for Docker egress -> host WebRTC than 50000-60000)
-  udp_port: 7882-7892
+  # UDP mux: keep a modest range for Docker egress, but wide enough for agent + KH + egress + reconnects.
+  udp_port: 7882-7952
   use_external_ip: false
   use_ice_lite: true
   # Host LAN IP — egress in Docker and browsers on host must reach this for WebRTC.

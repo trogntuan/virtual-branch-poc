@@ -23,6 +23,16 @@ export interface TokenResponse {
   participantToken: string;
 }
 
+export interface RecordingTrackResponse {
+  recordingId: string;
+  side: string;
+  egressId: string | null;
+  status: string;
+  objectKey: string | null;
+  playbackUrl: string | null;
+  errorMessage: string | null;
+}
+
 export interface RecordingResponse {
   recordingId: string;
   sessionId: string;
@@ -31,6 +41,15 @@ export interface RecordingResponse {
   objectKey: string | null;
   playbackUrl: string | null;
   errorMessage: string | null;
+  mode?: string | null;
+  groupId?: string | null;
+  tracks?: RecordingTrackResponse[] | null;
+}
+
+export type RecordingMode = 'ROOM_COMPOSITE' | 'DUAL_PARTICIPANT';
+
+export interface RecordingModeSettingResponse {
+  mode: RecordingMode | string;
 }
 
 export interface DocumentResponse {
@@ -133,6 +152,10 @@ export async function acceptCall(
     method: 'POST',
     body: JSON.stringify({ identity, name }),
   });
+}
+
+export async function skipCall(sessionId: string): Promise<SessionResponse> {
+  return request<SessionResponse>(`/api/v1/calls/${sessionId}/skip`, { method: 'POST' });
 }
 
 export async function getSession(sessionId: string): Promise<SessionResponse> {
@@ -263,4 +286,73 @@ export async function setRecordingSetting(enabled: boolean): Promise<RecordingSe
     method: 'PUT',
     body: JSON.stringify({ enabled }),
   });
+}
+
+export async function getRecordingModeSetting(): Promise<RecordingModeSettingResponse> {
+  return request<RecordingModeSettingResponse>('/api/v1/settings/recording-mode');
+}
+
+export async function setRecordingModeSetting(
+  mode: RecordingMode,
+): Promise<RecordingModeSettingResponse> {
+  return request<RecordingModeSettingResponse>('/api/v1/settings/recording-mode', {
+    method: 'PUT',
+    body: JSON.stringify({ mode }),
+  });
+}
+
+export interface ChatSettingsResponse {
+  maxFileSizeBytes: number;
+  maxFileSizeLabel: string;
+  allowedContentTypes: string[];
+  allowedExtensions: string[];
+  allowedExtensionsLabel: string;
+}
+
+export interface ChatDocumentPayload {
+  documentId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+export interface ChatCollabPayload {
+  collabId: string;
+  status: string;
+  documentId: string;
+}
+
+export interface ChatMessageResponse {
+  messageId: string;
+  sentAt: string;
+  senderRole: ParticipantRole;
+  senderIdentity: string;
+  senderName: string | null;
+  messageType: string;
+  text: string | null;
+  document: ChatDocumentPayload | null;
+  collab: ChatCollabPayload | null;
+  clientMessageId: string | null;
+}
+
+export interface ChatHistoryResponse {
+  sessionId: string;
+  messages: ChatMessageResponse[];
+  hasMore: boolean;
+}
+
+export async function getChatSettings(): Promise<ChatSettingsResponse> {
+  return request<ChatSettingsResponse>('/api/v1/chat/settings');
+}
+
+export async function getChatHistory(
+  sessionId: string,
+  after?: string,
+  limit = 50,
+): Promise<ChatHistoryResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (after) params.set('after', after);
+  return request<ChatHistoryResponse>(
+    `/api/v1/sessions/${sessionId}/chat/messages?${params.toString()}`,
+  );
 }

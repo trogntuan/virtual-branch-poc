@@ -37,6 +37,15 @@ public class RecordingEntity {
     @Column(name = "error_message")
     private String errorMessage;
 
+    @Column(name = "group_id")
+    private String groupId;
+
+    @Column(name = "side")
+    private String side;
+
+    @Column(name = "mode")
+    private String mode;
+
     protected RecordingEntity() {
     }
 
@@ -92,6 +101,18 @@ public class RecordingEntity {
         return errorMessage;
     }
 
+    public String getGroupId() {
+        return groupId;
+    }
+
+    public String getSide() {
+        return side;
+    }
+
+    public String getMode() {
+        return mode;
+    }
+
     public void setEgressId(String egressId) {
         this.egressId = egressId;
     }
@@ -111,5 +132,16 @@ public class RecordingEntity {
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
     }
-}
 
+    public void setGroupId(String groupId) {
+        this.groupId = groupId;
+    }
+
+    public void setSide(String side) {
+        this.side = side;
+    }
+
+    public void setMode(String mode) {
+        this.mode = mode;
+    }
+}

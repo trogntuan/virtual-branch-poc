@@ -1,5 +1,6 @@
 package com.example.virtualbranch.document;
 
+import com.example.virtualbranch.chat.ChatFileValidator;
 import com.example.virtualbranch.common.BusinessException;
 import com.example.virtualbranch.common.ErrorCode;
 import com.example.virtualbranch.session.SessionEntity;
@@ -35,6 +36,9 @@ class DocumentServiceTest {
     @Mock
     private ObjectStorageService objectStorageService;
 
+    @Mock
+    private ChatFileValidator chatFileValidator;
+
     @InjectMocks
     private DocumentService documentService;
 
@@ -53,6 +57,9 @@ class DocumentServiceTest {
     @Test
     void rejectsNonPdfContentType() {
         when(sessionRepository.findById("SES-test")).thenReturn(Optional.of(activeSession));
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.INVALID_DOCUMENT))
+                .when(chatFileValidator)
+                .validateUpload(any());
 
         MockMultipartFile file = new MockMultipartFile(
                 "file",

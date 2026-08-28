@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   getCollabDocumentUrl,
+  getDocumentUrl,
   getSession,
   issueToken,
   requestCall,
@@ -12,6 +13,8 @@ import { VideoTile } from '../components/VideoTile';
 import { DocCollabViewer } from '../collab/DocCollabViewer';
 import { useDocCollab } from '../collab/useDocCollab';
 import { useLiveKitRoom } from '../livekit/useLiveKitRoom';
+import { ChatPanel } from '../chat/ChatPanel';
+import type { ChatMessage } from '../chat/types';
 
 const DEFAULT_MOBILE_DISPLAY = {
   viewportWidth: 390,
@@ -32,6 +35,7 @@ export function CustomerTestPage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [activeCollabId, setActiveCollabId] = useState<string | null>(null);
   const [consentBusy, setConsentBusy] = useState(false);
+  const [chatCollabRequest, setChatCollabRequest] = useState<ChatMessage | null>(null);
   const identityRef = useRef(`customer-${crypto.randomUUID().slice(0, 8)}`);
   const prevConnectionRef = useRef<string>('DISCONNECTED');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -131,7 +135,7 @@ export function CustomerTestPage() {
           stopStatusPolling();
           setPhase('idle');
           setSessionId(null);
-          setPageError('Cuộc gọi đã kết thúc trước khi tổng đài viên nhận.');
+          setPageError('Tổng đài viên đã bỏ qua cuộc gọi.');
         }
       } catch {
         // keep polling
@@ -176,6 +180,7 @@ export function CustomerTestPage() {
       setSessionId(null);
       setPdfUrl(null);
       setActiveCollabId(null);
+      setChatCollabRequest(null);
       clearPendingRequest();
     } catch (cause) {
       setPageError(cause instanceof Error ? cause.message : 'Không rời được cuộc gọi.');
@@ -185,16 +190,18 @@ export function CustomerTestPage() {
   }
 
   async function handleConsent(decision: 'ACCEPT' | 'REJECT') {
-    if (!pendingRequest) return;
+    const collabId = chatCollabRequest?.collab?.collabId ?? pendingRequest?.collabId;
+    if (!collabId) return;
     setConsentBusy(true);
     setPageError(null);
     try {
-      const result = await submitCollabConsent(pendingRequest.collabId, decision);
+      const result = await submitCollabConsent(collabId, decision);
       clearPendingRequest();
+      setChatCollabRequest(null);
 
       if (decision === 'ACCEPT' && result.status === 'ACTIVE') {
-        setActiveCollabId(pendingRequest.collabId);
-        const docUrl = await getCollabDocumentUrl(pendingRequest.collabId);
+        setActiveCollabId(collabId);
+        const docUrl = await getCollabDocumentUrl(collabId);
         setPdfUrl(docUrl.readUrl);
       } else {
         setPdfUrl(null);
@@ -204,6 +211,38 @@ export function CustomerTestPage() {
       setPageError(cause instanceof Error ? cause.message : 'Không gửi được phản hồi chia sẻ tài liệu.');
     } finally {
       setConsentBusy(false);
+    }
+  }
+
+  function handleChatCollabRequest(message: ChatMessage) {
+    if (message.senderRole !== 'AGENT') return;
+    setChatCollabRequest(message);
+  }
+
+  function handleChatCollabStatus(message: ChatMessage) {
+    const collabInfo = message.collab;
+    const docInfo = message.document;
+    if (!collabInfo) return;
+
+    if (collabInfo.status === 'ACTIVE' && docInfo) {
+      setActiveCollabId(collabInfo.collabId);
+      void getCollabDocumentUrl(collabInfo.collabId)
+        .then((docUrl) => setPdfUrl(docUrl.readUrl))
+        .catch(() => {
+          void getDocumentUrl(docInfo.documentId)
+            .then((fallback) => setPdfUrl(fallback.readUrl))
+            .catch(() => undefined);
+        });
+      setChatCollabRequest(null);
+      clearPendingRequest();
+    }
+
+    if (collabInfo.status === 'REJECTED' || collabInfo.status === 'ENDED') {
+      setChatCollabRequest(null);
+      if (collabInfo.status === 'ENDED') {
+        setPdfUrl(null);
+        setActiveCollabId(null);
+      }
     }
   }
 
@@ -245,12 +284,14 @@ export function CustomerTestPage() {
         )}
       </section>
 
-      {pendingRequest && (
+      {(pendingRequest || chatCollabRequest) && (
         <section className="consent-panel">
           <h2 className="section-title">Yêu cầu chia sẻ tài liệu</h2>
           <p>
             Tổng đài viên muốn chia sẻ tài liệu:{' '}
-            <strong>{pendingRequest.data.fileName}</strong>
+            <strong>
+              {chatCollabRequest?.document?.fileName ?? pendingRequest?.data.fileName}
+            </strong>
           </p>
           <div className="controls-row">
             <button type="button" onClick={() => void handleConsent('REJECT')} disabled={consentBusy}>
@@ -264,26 +305,40 @@ export function CustomerTestPage() {
       )}
 
       {phase === 'in_call' && (
-        <div className={pdfUrl && !collabEnded ? 'call-stage call-stage--doc' : 'call-stage'}>
-          {pdfUrl && !collabEnded && (
-            <section className="call-stage-doc">
-              <DocCollabViewer url={pdfUrl} mode="customer" viewState={viewState} />
-            </section>
-          )}
+        <div className="vb-mobile-call">
+          <div className={pdfUrl && !collabEnded ? 'call-stage call-stage--doc' : 'call-stage'}>
+            {pdfUrl && !collabEnded && (
+              <section className="call-stage-doc">
+                <DocCollabViewer url={pdfUrl} mode="customer" viewState={viewState} />
+              </section>
+            )}
 
-          <aside className="call-stage-video">
-            <section className="video-grid">
-              <VideoTile label="Tổng đài viên" videoRef={remoteVideoRef} />
-              <VideoTile label="Khách hàng" videoRef={localVideoRef} muted />
-            </section>
-            <MediaControls
-              micEnabled={micEnabled}
-              cameraEnabled={cameraEnabled}
-              onToggleMic={() => void toggleMic()}
-              onToggleCamera={() => void toggleCamera()}
-              disabled={!isConnected || busy}
-            />
-          </aside>
+            <aside className="call-stage-video">
+              <section className="video-grid">
+                <VideoTile label="Tổng đài viên" videoRef={remoteVideoRef} />
+                <VideoTile label="Khách hàng" videoRef={localVideoRef} muted />
+              </section>
+              <MediaControls
+                micEnabled={micEnabled}
+                cameraEnabled={cameraEnabled}
+                onToggleMic={() => void toggleMic()}
+                onToggleCamera={() => void toggleCamera()}
+                disabled={!isConnected || busy}
+              />
+            </aside>
+          </div>
+
+          <ChatPanel
+            sessionId={sessionId}
+            identity={identityRef.current}
+            name="Khách hàng"
+            role="CUSTOMER"
+            compact={Boolean(pdfUrl && !collabEnded)}
+            enabled={isConnected}
+            onCollabRequest={handleChatCollabRequest}
+            onCollabStatus={handleChatCollabStatus}
+            onError={(message) => setPageError(message)}
+          />
         </div>
       )}
 

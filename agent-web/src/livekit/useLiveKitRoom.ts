@@ -149,7 +149,9 @@ export function useLiveKitRoom() {
       });
 
       try {
-        await nextRoom.connect(serverUrl, token);
+        await nextRoom.connect(serverUrl, token, {
+          peerConnectionTimeout: 20_000,
+        });
 
         await nextRoom.localParticipant.setMicrophoneEnabled(true);
         await nextRoom.localParticipant.setCameraEnabled(true);
@@ -168,7 +170,14 @@ export function useLiveKitRoom() {
         nextRoom.removeAllListeners();
         await nextRoom.disconnect();
 
-        if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
+        const isPcTimeout =
+          cause instanceof Error && cause.message.includes('could not establish pc connection');
+
+        if (isPcTimeout) {
+          setError(
+            'Không thiết lập được kết nối media (WebRTC). Thử tải lại trang; nếu vẫn lỗi, khởi động lại LiveKit (`infra/scripts/restart-livekit.sh`).',
+          );
+        } else if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
           setError('Chưa được cấp quyền camera hoặc micro.');
         } else if (cause instanceof Error) {
           setError(cause.message || 'Không kết nối được LiveKit.');

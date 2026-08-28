@@ -42,12 +42,27 @@ public class EgressPlaybackUrlService {
 
     private MinioClient buildClient() {
         MinioClient.Builder builder = MinioClient.builder()
-                .endpoint(egressStorageProperties.endpoint())
+                .endpoint(browserReachableEndpoint())
                 .credentials(egressStorageProperties.accessKey(), egressStorageProperties.secretKey());
         String region = egressStorageProperties.region();
         if (region != null && !region.isBlank() && !"auto".equalsIgnoreCase(region)) {
             builder.region(region);
         }
         return builder.build();
+    }
+
+    /**
+     * Egress containers use docker DNS ({@code minio:9000}); browsers need localhost.
+     */
+    private String browserReachableEndpoint() {
+        String endpoint = egressStorageProperties.endpoint();
+        if (endpoint == null || endpoint.isBlank()) {
+            return endpoint;
+        }
+        String lower = endpoint.toLowerCase();
+        if (lower.contains("://minio:") || lower.contains("://minio/") || lower.contains("host.docker.internal")) {
+            return "http://localhost:9000";
+        }
+        return endpoint;
     }
 }

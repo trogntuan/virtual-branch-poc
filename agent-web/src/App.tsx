@@ -3,6 +3,7 @@ import { AgentShell } from './layout/AgentShell';
 import { AgentQueuePage } from './pages/AgentQueuePage';
 import { AgentCallPage } from './pages/AgentCallPage';
 import { CustomerTestPage } from './pages/CustomerTestPage';
+import { InfraLoadTestPage } from './pages/InfraLoadTestPage';
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="call/:sessionId" element={<AgentCallPage />} />
       </Route>
       <Route path="/customer-test" element={<CustomerTestPage />} />
+      <Route path="/infra-load-test" element={<InfraLoadTestPage />} />
     </Routes>
   );
 }

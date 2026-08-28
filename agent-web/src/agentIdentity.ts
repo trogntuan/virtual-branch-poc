@@ -12,7 +12,7 @@ export function getAgentIdentity(): string {
 }
 
 export function getAgentDisplayName(): string {
-  return sessionStorage.getItem(NAME_KEY) ?? 'Lan Phương';
+  return sessionStorage.getItem(NAME_KEY) ?? 'TuanNT10';
 }
 
 export function setAgentDisplayName(name: string) {
