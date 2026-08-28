@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import { proxyStorageUrl } from '../storageUrl';
 import { clamp01, type DocCollabViewState } from './events';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -59,8 +60,9 @@ export function DocCollabViewer({
     setLoading(true);
     setLoadError(null);
 
+    const fetchUrl = proxyStorageUrl(url);
     const loadingTask = pdfjsLib.getDocument({
-      url,
+      url: fetchUrl,
       // Range requests need extra GCS CORS headers; disable so Cloud Run can fetch the PDF.
       disableRange: true,
       disableStream: true,

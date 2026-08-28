@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   acceptCall,
   listWaitingCalls,
+  skipCall,
   type SessionResponse,
 } from '../api/virtualBranchApi';
 import {
@@ -24,6 +25,7 @@ export function AgentQueuePage() {
   const [filter, setFilter] = useState('');
   const [pageError, setPageError] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [skippingId, setSkippingId] = useState<string | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -82,11 +84,20 @@ export function AgentQueuePage() {
     }
   }
 
-  function handleSkip() {
-    if (!selected) return;
-    const idx = filtered.findIndex((c) => c.sessionId === selected.sessionId);
-    const next = filtered[idx + 1] ?? filtered[idx - 1] ?? null;
-    setSelectedId(next?.sessionId ?? null);
+  async function handleSkip(call: SessionResponse) {
+    setSkippingId(call.sessionId);
+    setPageError(null);
+    try {
+      await skipCall(call.sessionId);
+      const idx = filtered.findIndex((c) => c.sessionId === call.sessionId);
+      const next = filtered[idx + 1] ?? filtered[idx - 1] ?? null;
+      setSelectedId(next?.sessionId ?? null);
+      await refreshQueue();
+    } catch (cause) {
+      setPageError(cause instanceof Error ? cause.message : 'Không bỏ qua được cuộc gọi.');
+    } finally {
+      setSkippingId(null);
+    }
   }
 
   return (
@@ -195,14 +206,19 @@ export function AgentQueuePage() {
             </div>
 
             <div className="vb-detail-actions">
-              <button type="button" className="vb-btn-secondary" onClick={handleSkip}>
-                Bỏ qua
+              <button
+                type="button"
+                className="vb-btn-secondary"
+                onClick={() => void handleSkip(selected)}
+                disabled={acceptingId != null || skippingId != null}
+              >
+                {skippingId === selected.sessionId ? 'Đang bỏ qua…' : 'Bỏ qua'}
               </button>
               <button
                 type="button"
                 className="vb-btn-primary"
                 onClick={() => void handleAccept(selected)}
-                disabled={acceptingId != null}
+                disabled={acceptingId != null || skippingId != null}
               >
                 {acceptingId === selected.sessionId ? 'Đang nhận…' : 'Nhận yêu cầu'}
               </button>

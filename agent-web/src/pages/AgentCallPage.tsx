@@ -3,13 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   endSession,
   endDocCollab,
+  getChatHistory,
+  getDocumentUrl,
   getMobileDisplay,
   getDocCollab,
   getRecordingModeSetting,
   getSession,
   issueToken,
-  startDocCollab,
-  uploadDocument,
   type DocumentResponse,
   type DocCollabResponse,
   type MobileDisplayResponse,
@@ -28,7 +28,9 @@ import { useDocCollab } from '../collab/useDocCollab';
 import { useLiveKitRoom } from '../livekit/useLiveKitRoom';
 import { useAgentChrome } from '../layout/AgentChromeContext';
 import { useRecording } from '../recording/useRecording';
-import { collabStatusLabel } from '../i18n/labels';
+import { ChatPanel } from '../chat/ChatPanel';
+import type { ChatMessage } from '../chat/types';
+import { findActiveCollabFromHistory } from '../chat/utils';
 
 const COLLAB_POLL_MS = 1000;
 
@@ -106,7 +108,6 @@ export function AgentCallPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [document, setDocument] = useState<DocumentResponse | null>(null);
-  const [uploadBusy, setUploadBusy] = useState(false);
   const [collab, setCollab] = useState<DocCollabResponse | null>(null);
   const [collabBusy, setCollabBusy] = useState(false);
   const [mobileDisplay, setMobileDisplay] = useState<MobileDisplayResponse | null>(null);
@@ -114,10 +115,10 @@ export function AgentCallPage() {
   const [postCallPhase, setPostCallPhase] = useState<PostCallPhase>(null);
   const [finalRecording, setFinalRecording] = useState<RecordingResponse | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectAttemptedRef = useRef(false);
   const autoRecordStartedRef = useRef(false);
+  const collabRestoredRef = useRef(false);
 
   const {
     connect,
@@ -287,6 +288,45 @@ export function AgentCallPage() {
   }, [sessionId, isConnected]);
 
   useEffect(() => {
+    collabRestoredRef.current = false;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !isConnected || collabRestoredRef.current || postCallPhase != null) return;
+
+    void (async () => {
+      try {
+        const history = await getChatHistory(sessionId);
+        const active = findActiveCollabFromHistory(history.messages);
+        if (!active) return;
+
+        const status = await getDocCollab(active.collabId);
+        if (status.status !== 'ACTIVE') return;
+
+        const docUrl = await getDocumentUrl(active.document.documentId);
+        setCollab({
+          collabId: active.collabId,
+          sessionId,
+          documentId: active.document.documentId,
+          status: 'ACTIVE',
+          consentDecision: 'ACCEPT',
+        });
+        setDocument({
+          documentId: active.document.documentId,
+          fileName: active.document.fileName,
+          contentType: active.document.contentType,
+          size: active.document.sizeBytes,
+          readUrl: docUrl.readUrl,
+        });
+        collabRestoredRef.current = true;
+        await sendDocState(active.collabId, active.document.documentId, viewState);
+      } catch {
+        // ignore restore errors
+      }
+    })();
+  }, [sessionId, isConnected, postCallPhase, sendDocState, viewState]);
+
+  useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -383,40 +423,6 @@ export function AgentCallPage() {
     }
   }
 
-  async function handleUploadPdf(file: File) {
-    if (!sessionId) return;
-    setUploadBusy(true);
-    setPageError(null);
-    try {
-      const uploaded = await uploadDocument(sessionId, file);
-      setDocument(uploaded);
-      setCollab(null);
-    } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : 'Không tải lên được PDF.');
-    } finally {
-      setUploadBusy(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }
-
-  async function handleRequestCollab() {
-    if (!sessionId || !document) return;
-    setCollabBusy(true);
-    setPageError(null);
-    try {
-      const started = await startDocCollab(sessionId, document.documentId);
-      setCollab(started);
-      await sendCollabRequest(started.collabId, document.documentId, document.fileName);
-      // Immediate second send helps when the first packet races the customer's listener.
-      await sendCollabRequest(started.collabId, document.documentId, document.fileName);
-      startCollabPolling(started.collabId, document.documentId, document.fileName);
-    } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : 'Không bắt đầu được chia sẻ tài liệu.');
-    } finally {
-      setCollabBusy(false);
-    }
-  }
-
   async function handleEndCollab() {
     if (!collab || !document) return;
     setCollabBusy(true);
@@ -425,12 +431,103 @@ export function AgentCallPage() {
       await sendCollabEnd(collab.collabId, document.documentId);
       stopCollabPolling();
       setCollab(null);
+      setDocument(null);
     } catch (cause) {
       setPageError(cause instanceof Error ? cause.message : 'Không kết thúc được chia sẻ tài liệu.');
     } finally {
       setCollabBusy(false);
     }
   }
+
+  const handleChatCollabRequest = useCallback(
+    (message: ChatMessage) => {
+      if (message.senderIdentity !== getAgentIdentity()) return;
+      const collabInfo = message.collab;
+      const docInfo = message.document;
+      if (!sessionId || !collabInfo || !docInfo) return;
+
+      setCollab({
+        collabId: collabInfo.collabId,
+        sessionId,
+        documentId: collabInfo.documentId,
+        status: 'REQUESTED',
+        consentDecision: null,
+      });
+
+      void (async () => {
+        try {
+          await sendCollabRequest(collabInfo.collabId, collabInfo.documentId, docInfo.fileName);
+          await sendCollabRequest(collabInfo.collabId, collabInfo.documentId, docInfo.fileName);
+          startCollabPolling(collabInfo.collabId, collabInfo.documentId, docInfo.fileName);
+        } catch (cause) {
+          setPageError(
+            cause instanceof Error ? cause.message : 'Không gửi được sự kiện Doc Collab.',
+          );
+        }
+      })();
+    },
+    [sessionId, sendCollabRequest],
+  );
+
+  const handleChatCollabStatus = useCallback(
+    (message: ChatMessage) => {
+      const collabInfo = message.collab;
+      const docInfo = message.document;
+      if (!sessionId || !collabInfo) return;
+
+      setCollab({
+        collabId: collabInfo.collabId,
+        sessionId,
+        documentId: collabInfo.documentId,
+        status: collabInfo.status,
+        consentDecision:
+          collabInfo.status === 'ACTIVE'
+            ? 'ACCEPT'
+            : collabInfo.status === 'REJECTED'
+              ? 'REJECT'
+              : null,
+      });
+
+      if (collabInfo.status === 'ACTIVE' && docInfo) {
+        void (async () => {
+          try {
+            const docUrl = await getDocumentUrl(docInfo.documentId);
+            setDocument({
+              documentId: docInfo.documentId,
+              fileName: docInfo.fileName,
+              contentType: docInfo.contentType,
+              size: docInfo.sizeBytes,
+              readUrl: docUrl.readUrl,
+            });
+            stopCollabPolling();
+            await sendDocState(collabInfo.collabId, docInfo.documentId, viewState);
+          } catch (cause) {
+            setPageError(
+              cause instanceof Error ? cause.message : 'Không tải được tài liệu chia sẻ.',
+            );
+          }
+        })();
+      }
+
+      if (collabInfo.status === 'REJECTED' || collabInfo.status === 'ENDED') {
+        stopCollabPolling();
+        if (collabInfo.status === 'ENDED') {
+          const endedDocumentId = docInfo?.documentId ?? collabInfo.documentId;
+          void (async () => {
+            if (endedDocumentId) {
+              try {
+                await sendCollabEnd(collabInfo.collabId, endedDocumentId);
+              } catch {
+                // ignore livekit cleanup errors
+              }
+            }
+            setDocument(null);
+          })();
+        }
+      }
+    },
+    [sessionId, sendDocState, sendCollabEnd, viewState],
+  );
 
   function goBackToQueue() {
     resetRecording();
@@ -601,97 +698,20 @@ export function AgentCallPage() {
           </section>
         )}
 
-        <aside className="vb-chat-panel">
-          <div className="vb-chat-scroll">
-            {!document && (
-              <div className="vb-chat-empty">
-                <p>Chỉ hỗ trợ gửi file PDF cho khách hàng.</p>
-                <p className="muted">Dùng nút đính kèm bên dưới để tải lên.</p>
-              </div>
-            )}
-
-            {document && (
-              <div className="vb-pdf-message">
-                <div className="vb-pdf-bubble">
-                  <div className="vb-pdf-icon">PDF</div>
-                  <div>
-                    <strong>{document.fileName}</strong>
-                    <p className="muted">{formatBytes(document.size)}</p>
-                  </div>
-                </div>
-                {!collab && (
-                  <button
-                    type="button"
-                    className="vb-collab-request-btn"
-                    onClick={() => void handleRequestCollab()}
-                    disabled={collabBusy || !isConnected}
-                  >
-                    {collabBusy ? 'Đang gửi…' : 'Yêu cầu xem cùng'}
-                  </button>
-                )}
-                {collab &&
-                  collab.status !== 'ENDED' &&
-                  collab.status !== 'REJECTED' &&
-                  collab.status !== 'ACTIVE' && (
-                    <button
-                      type="button"
-                      className="vb-collab-request-btn vb-collab-request-btn--muted"
-                      onClick={() => void handleEndCollab()}
-                      disabled={collabBusy}
-                    >
-                      Hủy yêu cầu
-                    </button>
-                  )}
-              </div>
-            )}
-
-            {collab && !docCollabActive && (
-              <div className="vb-collab-card">
-                <strong>Phiên Document Collab</strong>
-                <p>
-                  {collab.status === 'REQUESTED'
-                    ? 'Đã gửi yêu cầu Collab — Chờ KH xác nhận'
-                    : collabStatusLabel(collab.status)}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="vb-chat-composer">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              hidden
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void handleUploadPdf(file);
-              }}
-            />
-            <button
-              type="button"
-              className="vb-attach-btn"
-              title="Tải lên PDF"
-              disabled={uploadBusy || busy || !isConnected}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              📎
-            </button>
-            <input
-              type="text"
-              placeholder="Chỉ hỗ trợ upload PDF…"
-              disabled
-              readOnly
-            />
-            <button type="button" className="vb-send-btn" disabled title="Không dùng chat">
-              ➤
-            </button>
-          </div>
-          {uploadBusy && <p className="vb-upload-hint">Đang tải PDF lên…</p>}
-          {recordingBusy && isConnected && (
-            <p className="vb-upload-hint">Đang khởi tạo ghi hình…</p>
-          )}
-        </aside>
+        <ChatPanel
+          sessionId={sessionId}
+          identity={getAgentIdentity()}
+          name={getAgentDisplayName()}
+          role="AGENT"
+          compact={docCollabActive}
+          enabled={isConnected && postCallPhase == null}
+          onCollabRequest={handleChatCollabRequest}
+          onCollabStatus={handleChatCollabStatus}
+          onError={(message) => setPageError(message)}
+        />
+        {recordingBusy && isConnected && (
+          <p className="vb-upload-hint">Đang khởi tạo ghi hình…</p>
+        )}
       </div>
 
       {error && <div className="error-banner">{error}</div>}

@@ -127,4 +127,21 @@ class SessionServiceTest {
         assertEquals(SessionStatus.ACTIVE, response.status());
         assertEquals("agent-1", response.agentIdentity());
     }
+
+    @Test
+    void skipCallEndsWaitingSession() {
+        SessionEntity session = new SessionEntity(
+                "SES-wait",
+                "VB-wait",
+                SessionStatus.WAITING,
+                OffsetDateTime.now()
+        );
+        session.markWaiting("cust-1", "Alice", OffsetDateTime.now());
+        when(sessionRepository.findById("SES-wait")).thenReturn(Optional.of(session));
+
+        var response = sessionService.skipCall("SES-wait");
+
+        assertEquals(SessionStatus.ENDED, response.status());
+        assertEquals(SessionStatus.ENDED, session.getStatus());
+    }
 }

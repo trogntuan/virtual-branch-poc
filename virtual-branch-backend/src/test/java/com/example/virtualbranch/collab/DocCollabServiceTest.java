@@ -1,5 +1,7 @@
 package com.example.virtualbranch.collab;
 
+import com.example.virtualbranch.chat.ChatService;
+import com.example.virtualbranch.collab.dto.DocCollabResponse;
 import com.example.virtualbranch.common.BusinessException;
 import com.example.virtualbranch.common.ErrorCode;
 import com.example.virtualbranch.document.DocumentEntity;
@@ -9,6 +11,7 @@ import com.example.virtualbranch.session.SessionRepository;
 import com.example.virtualbranch.session.SessionStatus;
 import com.example.virtualbranch.storage.ObjectStorageService;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,8 +19,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -39,6 +44,9 @@ class DocCollabServiceTest {
     @Mock
     private ObjectStorageService objectStorageService;
 
+    @Mock
+    private ChatService chatService;
+
     @InjectMocks
     private DocCollabService docCollabService;
 
@@ -58,6 +66,7 @@ class DocCollabServiceTest {
                 null,
                 OffsetDateTime.now()
         );
+        ReflectionTestUtils.setField(docCollabService, "self", docCollabService);
     }
 
     @Test
@@ -123,5 +132,42 @@ class DocCollabServiceTest {
 
         assertEquals(ErrorCode.DOCUMENT_NOT_FOUND, exception.getErrorCode());
         verify(docCollabRepository, never()).save(any());
+    }
+
+    @Test
+    void startCollabReplacesExistingActiveCollab() {
+        DocCollabEntity existing = new DocCollabEntity(
+                "COLLAB-old",
+                "SES-test",
+                "DOC-test",
+                DocCollabStatus.ACTIVE,
+                OffsetDateTime.now().minusMinutes(1),
+                OffsetDateTime.now().minusMinutes(1)
+        );
+        DocumentEntity otherDocument = new DocumentEntity(
+                "DOC-new",
+                "SES-test",
+                "other.pdf",
+                "application/pdf",
+                2048,
+                "documents/SES-test/DOC-new.pdf",
+                null,
+                OffsetDateTime.now()
+        );
+
+        when(sessionRepository.findById("SES-test")).thenReturn(Optional.of(session));
+        when(documentRepository.findById("DOC-new")).thenReturn(Optional.of(otherDocument));
+        when(docCollabRepository.findBySessionIdOrderByStartedAtDesc("SES-test")).thenReturn(List.of(existing));
+        when(docCollabRepository.findById("COLLAB-old")).thenReturn(Optional.of(existing));
+        when(docCollabRepository.saveAndFlush(any(DocCollabEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(docCollabRepository.save(any(DocCollabEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DocCollabResponse response = docCollabService.startCollab("SES-test", "DOC-new");
+
+        assertEquals(DocCollabStatus.REQUESTED, response.status());
+        assertEquals("DOC-new", response.documentId());
+        assertNotEquals("COLLAB-old", response.collabId());
+        assertEquals(DocCollabStatus.ENDED, existing.getStatus());
+        verify(chatService).publishCollabStatus(existing);
     }
 }

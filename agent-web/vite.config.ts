@@ -13,6 +13,13 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: backendUrl,
           changeOrigin: true,
+          ws: true,
+        },
+        // Presigned MinIO URLs — Host must match VB_STORAGE_ENDPOINT (localhost:9000) or SigV4 → 403.
+        '/object-storage': {
+          target: 'http://localhost:9000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/object-storage/, ''),
         },
       },
     },

@@ -2,7 +2,7 @@ api_key: devkey
 api_secret: virtual_branch_poc_dev_secret_2026
 
 # Use host LAN IP (same as livekit.yaml node_ip) — reachable from Docker egress Chrome.
-ws_url: ws://192.168.21.136:7880
+ws_url: ws://172.20.10.2:7880
 insecure: true
 
 redis:

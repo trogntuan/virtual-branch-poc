@@ -154,6 +154,10 @@ export async function acceptCall(
   });
 }
 
+export async function skipCall(sessionId: string): Promise<SessionResponse> {
+  return request<SessionResponse>(`/api/v1/calls/${sessionId}/skip`, { method: 'POST' });
+}
+
 export async function getSession(sessionId: string): Promise<SessionResponse> {
   return request<SessionResponse>(`/api/v1/sessions/${sessionId}`);
 }
@@ -280,4 +284,60 @@ export async function setRecordingModeSetting(
     method: 'PUT',
     body: JSON.stringify({ mode }),
   });
+}
+
+export interface ChatSettingsResponse {
+  maxFileSizeBytes: number;
+  maxFileSizeLabel: string;
+  allowedContentTypes: string[];
+  allowedExtensions: string[];
+  allowedExtensionsLabel: string;
+}
+
+export interface ChatDocumentPayload {
+  documentId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+export interface ChatCollabPayload {
+  collabId: string;
+  status: string;
+  documentId: string;
+}
+
+export interface ChatMessageResponse {
+  messageId: string;
+  sentAt: string;
+  senderRole: ParticipantRole;
+  senderIdentity: string;
+  senderName: string | null;
+  messageType: string;
+  text: string | null;
+  document: ChatDocumentPayload | null;
+  collab: ChatCollabPayload | null;
+  clientMessageId: string | null;
+}
+
+export interface ChatHistoryResponse {
+  sessionId: string;
+  messages: ChatMessageResponse[];
+  hasMore: boolean;
+}
+
+export async function getChatSettings(): Promise<ChatSettingsResponse> {
+  return request<ChatSettingsResponse>('/api/v1/chat/settings');
+}
+
+export async function getChatHistory(
+  sessionId: string,
+  after?: string,
+  limit = 50,
+): Promise<ChatHistoryResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (after) params.set('after', after);
+  return request<ChatHistoryResponse>(
+    `/api/v1/sessions/${sessionId}/chat/messages?${params.toString()}`,
+  );
 }

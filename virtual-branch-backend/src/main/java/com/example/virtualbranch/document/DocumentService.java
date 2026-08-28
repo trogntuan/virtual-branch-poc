@@ -1,7 +1,10 @@
 package com.example.virtualbranch.document;
 
+import com.example.virtualbranch.chat.ChatFileValidator;
+import com.example.virtualbranch.chat.ChatValidationException;
 import com.example.virtualbranch.common.BusinessException;
 import com.example.virtualbranch.common.ErrorCode;
+import com.example.virtualbranch.config.ChatProperties;
 import com.example.virtualbranch.document.dto.DocumentResponse;
 import com.example.virtualbranch.document.dto.DocumentUrlResponse;
 import com.example.virtualbranch.session.SessionEntity;
@@ -10,7 +13,6 @@ import com.example.virtualbranch.session.SessionStatus;
 import com.example.virtualbranch.storage.ObjectStorageService;
 import com.example.virtualbranch.storage.StorageOperationException;
 import java.time.OffsetDateTime;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -23,21 +25,27 @@ import org.springframework.web.multipart.MultipartFile;
 public class DocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
-    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("application/pdf");
-    private static final long MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
     private static final int READ_URL_EXPIRY_SECONDS = 600;
     private static final String OBJECT_PREFIX = "documents/";
 
     private final SessionRepository sessionRepository;
     private final DocumentRepository documentRepository;
     private final ObjectStorageService objectStorageService;
+    private final ChatFileValidator chatFileValidator;
+    private final ChatProperties chatProperties;
 
-    public DocumentService(SessionRepository sessionRepository,
-                           DocumentRepository documentRepository,
-                           ObjectStorageService objectStorageService) {
+    public DocumentService(
+            SessionRepository sessionRepository,
+            DocumentRepository documentRepository,
+            ObjectStorageService objectStorageService,
+            ChatFileValidator chatFileValidator,
+            ChatProperties chatProperties
+    ) {
         this.sessionRepository = sessionRepository;
         this.documentRepository = documentRepository;
         this.objectStorageService = objectStorageService;
+        this.chatFileValidator = chatFileValidator;
+        this.chatProperties = chatProperties;
     }
 
     @Transactional
@@ -47,15 +55,19 @@ public class DocumentService {
         validateFile(file);
 
         String documentId = "DOC-" + UUID.randomUUID();
-        String objectKey = OBJECT_PREFIX + sessionId + "/" + documentId + ".pdf";
+        String extension = extensionFromFile(file);
+        String objectKey = OBJECT_PREFIX + sessionId + "/" + documentId + "." + extension;
 
         uploadToStorage(objectKey, file);
 
+        String contentType = file.getContentType() != null
+                ? file.getContentType()
+                : "application/octet-stream";
         DocumentEntity document = new DocumentEntity(
                 documentId,
                 session.getId(),
-                file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf",
-                file.getContentType() != null ? file.getContentType() : "application/pdf",
+                file.getOriginalFilename() != null ? file.getOriginalFilename() : "document." + extension,
+                contentType,
                 file.getSize(),
                 objectKey,
                 null,
@@ -79,22 +91,42 @@ public class DocumentService {
             throw new BusinessException(ErrorCode.INVALID_DOCUMENT, "File is empty");
         }
 
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
-            throw new BusinessException(ErrorCode.INVALID_DOCUMENT,
-                    "Only PDF files are allowed. Got: " + contentType);
+        try {
+            chatFileValidator.validateUpload(file);
+        } catch (ChatValidationException exception) {
+            if ("FILE_TOO_LARGE".equals(exception.errorCode())) {
+                throw new BusinessException(
+                        ErrorCode.FILE_TOO_LARGE,
+                        "File vượt quá giới hạn " + chatProperties.maxFileSizeLabel() + " cho chat"
+                );
+            }
+            if ("FILE_TYPE_NOT_ALLOWED".equals(exception.errorCode())) {
+                throw new BusinessException(
+                        ErrorCode.FILE_TYPE_NOT_ALLOWED,
+                        "Chỉ chấp nhận file " + chatProperties.allowedExtensionsLabel()
+                );
+            }
+            throw new BusinessException(ErrorCode.INVALID_DOCUMENT, exception.getMessage());
         }
+    }
 
-        String originalName = file.getOriginalFilename();
-        if (originalName != null && !originalName.toLowerCase().endsWith(".pdf")) {
-            throw new BusinessException(ErrorCode.INVALID_DOCUMENT,
-                    "File extension must be .pdf");
+    private static String extensionFromFile(MultipartFile file) {
+        String extension = ChatFileValidator.extensionFromFilename(file.getOriginalFilename());
+        if (!extension.isBlank()) {
+            return extension;
         }
-
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new BusinessException(ErrorCode.INVALID_DOCUMENT,
-                    "File size exceeds maximum of 50 MB");
-        }
+        String contentType = ChatFileValidator.normalizeContentType(file.getContentType());
+        return switch (contentType) {
+            case "application/pdf" -> "pdf";
+            case "image/jpeg" -> "jpg";
+            case "image/png" -> "png";
+            case "image/gif" -> "gif";
+            case "image/webp" -> "webp";
+            case "application/msword" -> "doc";
+            case "application/vnd.ms-excel" -> "xls";
+            case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> "xlsx";
+            default -> "bin";
+        };
     }
 
     private void uploadToStorage(String objectKey, MultipartFile file) {

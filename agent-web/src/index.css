@@ -1504,10 +1504,477 @@ code {
 .vb-chat-scroll {
   flex: 1;
   overflow: auto;
-  padding: 1rem;
+  overflow-x: hidden;
+  padding: 1rem 0.85rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
+}
+
+.vb-chat-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  max-width: 92%;
+}
+
+.vb-chat-message--own {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.vb-chat-message:has(.vb-collab-card) {
+  max-width: 100%;
+}
+
+.vb-chat-message--own:has(.vb-collab-card) {
+  align-self: flex-end;
+}
+
+.vb-chat-message:has(.vb-collab-card) .vb-chat-message-body {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.vb-chat-message--own:has(.vb-collab-card) .vb-chat-message-body {
+  width: 100%;
+  align-items: stretch;
+}
+
+.vb-chat-message--peer {
+  align-self: flex-start;
+}
+
+.vb-chat-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.vb-chat-message-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.vb-chat-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.vb-chat-meta--right {
+  justify-content: flex-end;
+}
+
+.vb-chat-meta-name {
+  font-weight: 600;
+  color: var(--vb-text);
+}
+
+.vb-chat-meta-time {
+  color: var(--vb-muted);
+  font-weight: 500;
+}
+
+.vb-chat-file-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: flex-start;
+  max-width: 280px;
+}
+
+.vb-chat-message--own .vb-chat-file-block {
+  align-items: flex-end;
+}
+
+.vb-file-message-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.vb-file-message {
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--vb-border);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.vb-file-message-wrap:hover .vb-file-message,
+.vb-file-message-wrap--open .vb-file-message {
+  border-color: #93c5fd;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.08);
+}
+
+.vb-file-actions-menu {
+  display: none;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.4rem;
+  padding: 0.35rem;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
+}
+
+.vb-file-message-wrap:hover .vb-file-actions-menu,
+.vb-file-message-wrap--open .vb-file-actions-menu,
+.vb-file-message-wrap:focus-within .vb-file-actions-menu {
+  display: flex;
+}
+
+.vb-file-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vb-file-action-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #1d4ed8;
+}
+
+.vb-file-action-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.vb-file-action-btn--collab {
+  color: #1d4ed8;
+}
+
+.vb-file-action-btn--collab:hover:not(:disabled) {
+  background: #eff6ff;
+}
+
+.vb-file-action-btn svg {
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+.vb-file-action-btn:hover:not(:disabled) svg {
+  color: #2563eb;
+}
+
+.vb-file-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  background: #f3f7fc;
+  border: 1px solid #e2ebf5;
+  min-width: 0;
+}
+
+.vb-file-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.vb-file-name {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #1e3a5f;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.vb-file-meta {
+  display: block;
+  margin-top: 0.12rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.vb-file-icon {
+  width: 42px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #dbeafe;
+  color: #2563eb;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.vb-file-icon-svg {
+  display: block;
+}
+
+.vb-file-icon-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.vb-collab-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  border: 2px solid #93c5fd;
+  background: #fff;
+  overflow: hidden;
+}
+
+.vb-collab-card--request {
+  border-color: #3b82f6;
+}
+
+.vb-collab-card--active {
+  border-color: #22c55e;
+}
+
+.vb-collab-card--rejected,
+.vb-collab-card--ended {
+  border-color: #cbd5e1;
+}
+
+.vb-collab-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  min-width: 0;
+}
+
+.vb-collab-card-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.vb-collab-status-badge {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: 0;
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 0.28rem 0.55rem;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.vb-collab-card--active .vb-collab-status-badge {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.vb-collab-card--rejected .vb-collab-status-badge,
+.vb-collab-card--ended .vb-collab-status-badge {
+  color: #64748b;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.vb-collab-card-title {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--vb-text);
+  line-height: 1.3;
+}
+
+.vb-collab-card-desc {
+  margin: 0 0 0.65rem;
+  font-size: 0.78rem;
+  color: var(--vb-muted);
+  line-height: 1.45;
+}
+
+.vb-collab-card .vb-file-card {
+  margin-top: 0.15rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.vb-collab-card .vb-file-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vb-collab-card .vb-file-name {
+  overflow-wrap: anywhere;
+}
+
+.vb-collab-card .vb-collab-request-btn {
+  margin-top: 0.55rem;
+}
+
+.vb-file-card--compact {
+  gap: 0.4rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+}
+
+.vb-file-card--compact .vb-file-icon {
+  width: 28px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.vb-file-card--compact .vb-file-icon-svg {
+  width: 16px;
+  height: 18px;
+}
+
+.vb-file-card--compact .vb-file-name {
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.vb-file-card--compact .vb-file-meta {
+  font-size: 0.62rem;
+  margin-top: 0.05rem;
+}
+
+.vb-chat-panel--compact .vb-chat-scroll {
+  padding: 0.5rem 0.55rem;
+  gap: 0.5rem;
+}
+
+.vb-chat-panel--compact .vb-chat-message {
+  gap: 0.35rem;
+  max-width: 100%;
+}
+
+.vb-chat-panel--compact .vb-chat-avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 0.62rem;
+}
+
+.vb-chat-panel--compact .vb-chat-meta {
+  font-size: 0.68rem;
+  gap: 0.3rem;
+}
+
+.vb-chat-panel--compact .vb-chat-bubble {
+  font-size: 0.82rem;
+  padding: 0.4rem 0.55rem;
+}
+
+.vb-chat-panel--compact .vb-chat-file-block {
+  max-width: 100%;
+  width: 100%;
+}
+
+.vb-chat-panel--compact .vb-file-message {
+  padding: 0.35rem 0.4rem;
+}
+
+.vb-chat-panel--compact .vb-collab-card {
+  padding: 0.45rem 0.5rem;
+  border-radius: 10px;
+  border-width: 1px;
+}
+
+.vb-chat-panel--compact .vb-collab-card-header {
+  margin-bottom: 0.3rem;
+  gap: 0.35rem;
+}
+
+.vb-chat-panel--compact .vb-collab-card-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.vb-chat-panel--compact .vb-collab-card-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.vb-chat-panel--compact .vb-collab-status-badge {
+  font-size: 0.58rem;
+  padding: 0.16rem 0.38rem;
+  line-height: 1.25;
+}
+
+.vb-chat-panel--compact .vb-collab-card-desc {
+  font-size: 0.66rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.3;
+}
+
+.vb-chat-panel--compact .vb-collab-card .vb-collab-request-btn {
+  margin-top: 0.35rem;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.vb-chat-panel--compact .vb-chat-composer {
+  padding: 0.45rem 0.5rem;
+  gap: 0.35rem;
+}
+
+.vb-chat-panel--compact .vb-chat-composer input {
+  font-size: 0.82rem;
+  padding: 0.4rem 0.55rem;
+}
+
+.vb-chat-panel--compact .vb-chat-plus-btn,
+.vb-chat-panel--compact .vb-chat-send-btn {
+  width: 30px;
+  height: 30px;
+  font-size: 1rem;
+}
+
+.vb-chat-file-meta {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--vb-muted);
 }
 
 .vb-chat-empty {
@@ -1535,6 +2002,8 @@ code {
   border: 1px solid var(--vb-border);
   width: 100%;
 }
+
+/* legacy alias — prefer .vb-file-card in chat */
 
 .vb-collab-request-btn {
   align-self: flex-start;
@@ -1572,25 +2041,12 @@ code {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  background: #fee2e2;
-  color: #b91c1c;
+  background: #dbeafe;
+  color: #2563eb;
   display: grid;
   place-items: center;
   font-size: 0.7rem;
   font-weight: 800;
-}
-
-.vb-collab-card {
-  padding: 0.85rem;
-  border-radius: 12px;
-  border: 1px solid #93c5fd;
-  background: #eff6ff;
-}
-
-.vb-collab-card p {
-  margin: 0.35rem 0 0;
-  font-size: 0.85rem;
-  color: var(--vb-muted);
 }
 
 .vb-chat-composer {
@@ -1600,6 +2056,53 @@ code {
   padding: 0.75rem;
   border-top: 1px solid var(--vb-border);
   background: #fafbfd;
+}
+
+.vb-chat-plus-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--vb-border);
+  background: #fff;
+  color: var(--vb-muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.vb-chat-input-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.vb-chat-input {
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid var(--vb-border);
+  background: #fff;
+  padding: 0.65rem 2.5rem 0.65rem 1rem;
+  font-size: 0.9rem;
+}
+
+.vb-chat-inline-attach {
+  position: absolute;
+  right: 0.55rem;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--vb-muted);
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.vb-chat-inline-attach:hover:not(:disabled) {
+  color: var(--vb-blue);
 }
 
 .vb-chat-composer input[type='text'] {
@@ -1633,13 +2136,130 @@ code {
 
 .vb-send-btn {
   background: var(--vb-blue);
+  color: #fff;
+}
+
+.vb-send-btn svg {
+  display: block;
 }
 
 .vb-upload-hint {
   margin: 0;
-  padding: 0 0.75rem 0.65rem;
+  padding: 0 0.75rem 0.5rem;
   font-size: 0.8rem;
   color: var(--vb-muted);
+}
+
+.vb-upload-hint--error {
+  color: #b91c1c;
+}
+
+.vb-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--vb-border);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.vb-chat-status {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--vb-muted);
+}
+
+.vb-chat-status--connected {
+  color: #15803d;
+}
+
+.vb-chat-bubble-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  max-width: 92%;
+}
+
+.vb-chat-bubble-row--own {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.vb-chat-sender {
+  font-size: 0.72rem;
+  color: var(--vb-muted);
+  padding: 0 0.35rem;
+}
+
+.vb-chat-bubble {
+  padding: 0.7rem 0.9rem;
+  border-radius: 14px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  line-height: 1.45;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.vb-chat-bubble--own {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.vb-pdf-bubble--image {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.vb-file-card .vb-chat-image-thumb {
+  width: 42px;
+  height: 48px;
+  max-width: none;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.vb-chat-image-thumb {
+  width: 100%;
+  max-width: 220px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.vb-file-card .vb-chat-image-placeholder {
+  width: 42px;
+  height: 48px;
+}
+
+.vb-chat-image-placeholder {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  background: #e2e8f0;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  color: var(--vb-muted);
+}
+
+.vb-mobile-call {
+  display: grid;
+  grid-template-rows: 1fr minmax(280px, 42vh);
+  gap: 0.75rem;
+  min-height: 70vh;
+}
+
+.vb-mobile-call .vb-chat-panel {
+  min-height: 280px;
+}
+
+.vb-mobile-call .call-stage {
+  min-height: 0;
 }
 
 .vb-postcall {
